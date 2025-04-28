@@ -37,6 +37,103 @@ class NoAliasDumper(yaml.SafeDumper):
 VALID_STEP_TYPES = {"warmup", "cooldown", "interval", "recovery", "rest", "repeat", "other"}
 
 
+def extract_paces_and_speeds_from_excel(excel_file):
+    """
+    Estrae ritmi per la corsa, zone di potenza FTP per il ciclismo e passi vasca per il nuoto
+    dal foglio Paces unificato, usando openpyxl per accedere alle celle direttamente.
+    
+    Args:
+        excel_file: Percorso del file Excel
+        
+    Returns:
+        Tuple (paces, swim_paces, power_values) con i dizionari contenenti i valori estratti
+    """
+    try:
+        import openpyxl
+        
+        # Carica il workbook
+        wb = openpyxl.load_workbook(excel_file, data_only=True)
+        
+        # Verifica se il foglio Paces esiste
+        if 'Paces' not in wb.sheetnames:
+            print("Foglio Paces non trovato!")
+            return {}, {}, {}
+        
+        # Ottieni il foglio
+        sheet = wb['Paces']
+        
+        # Dizionari da popolare
+        paces = {}
+        swim_paces = {}
+        power_values = {}
+        
+        # Inizializza lo stato del parser
+        current_section = None  # 'running', 'power', o 'swimming'
+        
+        # Processa riga per riga
+        for row_idx in range(1, sheet.max_row + 1):
+            # Leggi i valori dalle prime tre colonne
+            col0 = sheet.cell(row=row_idx, column=1).value
+            col1 = sheet.cell(row=row_idx, column=2).value
+            
+            col0_str = str(col0) if col0 is not None else ""
+            
+            # Stampa la riga per debug
+            print(f"Riga {row_idx}: {col0_str} - {col1}")
+            
+            # Controlla se è un'intestazione di sezione
+            if col0_str and "RITMI PER LA CORSA" in col0_str:
+                current_section = 'running'
+                print(f"Trovata sezione RUNNING a riga {row_idx}")
+                continue
+            elif col0_str and "POTENZA PER IL CICLISMO" in col0_str:
+                current_section = 'power'
+                print(f"Trovata sezione POWER a riga {row_idx}")
+                continue
+            elif col0_str and "PASSI VASCA PER IL NUOTO" in col0_str:
+                current_section = 'swimming'
+                print(f"Trovata sezione SWIMMING a riga {row_idx}")
+                continue
+            
+            # Salta righe vuote, intestazioni o righe di commento
+            if not col0 or col0 == "Name" or col0_str.startswith('*') or col0_str.startswith('#'):
+                continue
+            
+            # Se abbiamo un nome e un valore in una sezione valida
+            if current_section and col0 and col1:
+                # Estrai nome e valore
+                name = col0_str.strip()
+                
+                # Gestisci diversi tipi di dati per il valore
+                if isinstance(col1, (int, float)):
+                    value = str(col1)
+                else:
+                    value = str(col1).strip()
+                
+                # Aggiunta importante di debug
+                print(f"Aggiungendo {name}: {value} a {current_section}")
+                
+                # Aggiungi al dizionario appropriato
+                if current_section == 'running':
+                    paces[name] = value
+                elif current_section == 'power':
+                    power_values[name] = value
+                elif current_section == 'swimming':
+                    swim_paces[name] = value
+        
+        # Stampa i valori estratti per debug
+        print(f"Ritmi estratti: {paces}")
+        print(f"Valori potenza estratti: {power_values}")
+        print(f"Passi vasca estratti: {swim_paces}")
+        
+        return paces, swim_paces, power_values
+    
+    except Exception as e:
+        import traceback
+        print(f"Errore nell'estrazione dei ritmi, potenza e passi vasca: {str(e)}")
+        traceback.print_exc()
+        return {}, {}, {}
+
 def yaml_to_excel(yaml_data, excel_file, create_new=False):
     """
     Converti i dati YAML in un file Excel.
@@ -369,7 +466,7 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     """
     Converte un file Excel strutturato in un file YAML compatibile con garmin-planner.
     Include supporto per estrarre le date degli allenamenti e la data della gara.
-    Ora estrae sia paces, speeds che swim_paces indipendentemente dal tipo di sport.
+    Ora estrae sia paces che power_values e swim_paces indipendentemente dal tipo di sport.
     
     Args:
         excel_file: Percorso del file Excel di input
@@ -423,16 +520,13 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     plan = {'config': {
         'heart_rates': {},
         'paces': {},
-        'speeds': {},
+        'power_values': {}, # Sezione per i valori di potenza
         'swim_paces': {},  # Sezione per i passi vasca
-        'power_values': {}, # NUOVA sezione per i valori di potenza
         'margins': {
             'faster': '0:03',
             'slower': '0:03',
-            'faster_spd': '2.0',  # Margini per velocità in km/h
-            'slower_spd': '2.0',
-            'power_up': 10,       # NUOVO - Margine superiore per potenza in Watt
-            'power_down': 10,     # NUOVO - Margine inferiore per potenza in Watt
+            'power_up': 10,       # Margine superiore per potenza in Watt
+            'power_down': 10,     # Margine inferiore per potenza in Watt
             'hr_up': 5,
             'hr_down': 5
         },
@@ -535,15 +629,13 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
             preferred_days_value = str(preferred_days_rows.iloc[0, 1]).strip()
             plan['config']['preferred_days'] = preferred_days_value
     
-    # NUOVA IMPLEMENTAZIONE: Utilizzare il parser migliorato per estrarre ritmi, velocità, potenza e passi vasca
+    # NUOVA IMPLEMENTAZIONE: Utilizzare il parser migliorato per estrarre ritmi, potenza e passi vasca
     if 'Paces' in xls.sheet_names:
-        paces, speeds, swim_paces, power_values = extract_paces_and_speeds_from_excel(excel_file)
+        paces, swim_paces, power_values = extract_paces_and_speeds_from_excel(excel_file)
         
         # Aggiorna il piano con i valori estratti
         if paces:
             plan['config']['paces'] = paces
-        if speeds:
-            plan['config']['speeds'] = speeds
         if swim_paces:
             plan['config']['swim_paces'] = swim_paces
         if power_values:
@@ -641,112 +733,6 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     add_comments_to_yaml(output_file, workout_descriptions)
     
     return plan
-
-
-def extract_paces_and_speeds_from_excel(excel_file):
-    """
-    Estrae ritmi per la corsa, velocità per il ciclismo, zone di potenza FTP e passi vasca per il nuoto
-    dal foglio Paces unificato, usando openpyxl per accedere alle celle direttamente.
-    
-    Args:
-        excel_file: Percorso del file Excel
-        
-    Returns:
-        Tuple (paces, speeds, swim_paces, power_values) con i dizionari contenenti i valori estratti
-    """
-    try:
-        import openpyxl
-        
-        # Carica il workbook
-        wb = openpyxl.load_workbook(excel_file, data_only=True)
-        
-        # Verifica se il foglio Paces esiste
-        if 'Paces' not in wb.sheetnames:
-            print("Foglio Paces non trovato!")
-            return {}, {}, {}, {}
-        
-        # Ottieni il foglio
-        sheet = wb['Paces']
-        
-        # Dizionari da popolare
-        paces = {}
-        speeds = {}
-        swim_paces = {}
-        power_values = {}
-        
-        # Inizializza lo stato del parser
-        current_section = None  # 'running', 'cycling', 'power', o 'swimming'
-        
-        # Processa riga per riga
-        for row_idx in range(1, sheet.max_row + 1):
-            # Leggi i valori dalle prime tre colonne
-            col0 = sheet.cell(row=row_idx, column=1).value
-            col1 = sheet.cell(row=row_idx, column=2).value
-            
-            col0_str = str(col0) if col0 is not None else ""
-            
-            # Stampa la riga per debug
-            print(f"Riga {row_idx}: {col0_str} - {col1}")
-            
-            # Controlla se è un'intestazione di sezione
-            if col0_str and "RITMI PER LA CORSA" in col0_str:
-                current_section = 'running'
-                print(f"Trovata sezione RUNNING a riga {row_idx}")
-                continue
-            elif col0_str and "VELOCITÀ PER IL CICLISMO" in col0_str:
-                current_section = 'cycling'
-                print(f"Trovata sezione CYCLING a riga {row_idx}")
-                continue
-            elif col0_str and "POTENZA PER IL CICLISMO" in col0_str:
-                current_section = 'power'
-                print(f"Trovata sezione POWER a riga {row_idx}")
-                continue
-            elif col0_str and "PASSI VASCA PER IL NUOTO" in col0_str:
-                current_section = 'swimming'
-                print(f"Trovata sezione SWIMMING a riga {row_idx}")
-                continue
-            
-            # Salta righe vuote, intestazioni o righe di commento
-            if not col0 or col0 == "Name" or col0_str.startswith('*') or col0_str.startswith('#'):
-                continue
-            
-            # Se abbiamo un nome e un valore in una sezione valida
-            if current_section and col0 and col1:
-                # Estrai nome e valore
-                name = col0_str.strip()
-                
-                # Gestisci diversi tipi di dati per il valore
-                if isinstance(col1, (int, float)):
-                    value = str(col1)
-                else:
-                    value = str(col1).strip()
-                
-                # Aggiunta importante di debug
-                print(f"Aggiungendo {name}: {value} a {current_section}")
-                
-                # Aggiungi al dizionario appropriato
-                if current_section == 'running':
-                    paces[name] = value
-                elif current_section == 'cycling':
-                    speeds[name] = value
-                elif current_section == 'power':
-                    power_values[name] = value
-                elif current_section == 'swimming':
-                    swim_paces[name] = value
-        
-        # Stampa i valori estratti per debug
-        print(f"Ritmi estratti: {paces}")
-        print(f"Velocità estratte: {speeds}")
-        print(f"Valori potenza estratti: {power_values}")
-        print(f"Passi vasca estratti: {swim_paces}")
-        
-        return paces, speeds, swim_paces, power_values
-    
-    except Exception as e:
-        import traceback
-        print(f"Errore nell'estrazione dei ritmi, velocità, potenza e passi vasca: {str(e)}")
-        traceback.print_exc()
-        return {}, {}, {}, {}
 
 def create_unified_examples_sheet(workbook):
     """
@@ -1699,10 +1685,11 @@ def auto_adjust_column_widths(worksheet):
             worksheet.column_dimensions[column].width = min(adjusted_width, 60)  # Limit to 60 to avoid too wide columns
 
 
+
 def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="running"):
     """
     Create a sample Excel file with the expected structure for the training plan.
-    Always includes both running, cycling and swimming paces in a unified Paces sheet.
+    Always includes running paces, power values for cycling and swimming paces in a unified Paces sheet.
     
     Args:
         output_file: Path for the output Excel file
@@ -1750,7 +1737,6 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     config_sheet['A2'] = 'name_prefix'
     config_sheet['B2'] = prefix
     
-    # Rimuovi il tipo di sport dalla config, ora è per ogni allenamento
     # Imposta i margini appropriati 
     config_sheet['A3'] = 'margins'
     config_sheet['B3'] = '0:03'   # faster in min:sec
@@ -1775,7 +1761,7 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
         config_sheet[f'{col}1'].font = Font(bold=True)
         config_sheet[f'{col}1'].fill = header_fill
     
-    # Crea il foglio Paces unificato con tutti i tipi di ritmi/velocità/passo vasca
+    # Crea il foglio Paces unificato con tutti i tipi di ritmi/potenza/passo vasca
     create_unified_paces_sheet(wb, sport_type)
     
     # HeartRates sheet (Z1-Z5 zones)
@@ -1825,12 +1811,12 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     workouts_sheet['A2'] = 'Week'
     workouts_sheet['B2'] = 'Date'
     workouts_sheet['C2'] = 'Session'
-    workouts_sheet['D2'] = 'Sport'    # Nuova colonna
+    workouts_sheet['D2'] = 'Sport'    # Colonna per il tipo di sport
     workouts_sheet['E2'] = 'Description'
     workouts_sheet['F2'] = 'Steps'
 
     # Format header
-    for col in ['A', 'B', 'C', 'D', 'E', 'F']:  # Aggiunto 'D'
+    for col in ['A', 'B', 'C', 'D', 'E', 'F']:
         cell = workouts_sheet[f'{col}2']
         cell.font = Font(bold=True)
         cell.fill = header_fill
@@ -1919,7 +1905,7 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
         workouts_sheet[f'F{i}'] = steps
         
         # Apply background color and border to all cells in the row
-        for col in ['A', 'B', 'C', 'D', 'E', 'F']:  # Aggiunto 'D'
+        for col in ['A', 'B', 'C', 'D', 'E', 'F']:
             cell = workouts_sheet[f'{col}{i}']
             cell.fill = row_fill
             cell.border = thin_border
@@ -1963,7 +1949,6 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     wb.save(output_file)
     logging.info(f"Sample Excel file created: {output_file}")
     return output_file
-
 
 
 def create_unified_paces_sheet(workbook, sport_type="running"):
