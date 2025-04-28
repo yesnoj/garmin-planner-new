@@ -75,6 +75,7 @@ DEFAULT_CONFIG = {
         "font_size": "medium",
         "window_size": "1280x800"
     },
+    "athlete_name": "",
     "recent_files": []
 }
 

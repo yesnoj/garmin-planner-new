@@ -194,9 +194,14 @@ class GarminPlannerApp(tk.Tk):
             self.login_frame.show_login_error(f"Errore nel login automatico: {str(e)}")
         
     def set_status(self, message):
-        """Imposta il messaggio nella barra di stato"""
-        self.status_label.config(text=message)
-        self.update_idletasks()
+        """Imposta il messaggio di stato globale e lo salva nei log"""
+        self.status_var.set(message)
+        logging.info(message)
+        
+        # Se è un messaggio relativo al nome dell'atleta, assicurati di salvare la configurazione
+        if "Nome atleta" in message:
+            from garmin_planner_gui.gui.utils import save_config
+            save_config(self.config)
     
     def update_login_status(self, message):
         """Aggiorna il messaggio di stato del login"""

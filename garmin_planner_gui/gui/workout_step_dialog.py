@@ -415,7 +415,7 @@ class StepDialog(tk.Toplevel):
         
         help_dialog = tk.Toplevel(self)
         help_dialog.title("Aiuto zone di potenza")
-        help_dialog.geometry("400x300")
+        help_dialog.geometry("500x400")
         help_dialog.transient(self)
         help_dialog.grab_set()
         

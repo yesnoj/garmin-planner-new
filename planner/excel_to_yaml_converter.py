@@ -134,9 +134,11 @@ def extract_paces_and_speeds_from_excel(excel_file):
         traceback.print_exc()
         return {}, {}, {}
 
+
 def yaml_to_excel(yaml_data, excel_file, create_new=False):
     """
     Converti i dati YAML in un file Excel.
+    Mantiene i valori di ritmo, potenza e passi vasca solo nel foglio Paces senza duplicarli in Config.
     
     Args:
         yaml_data: Dizionario con i dati YAML
@@ -182,9 +184,23 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
             logging.error(f"Errore nel caricamento del file Excel: {str(e)}")
             return False
         
-        # Aggiorna la configurazione nel foglio Config
+        # Aggiorna la configurazione nel foglio Config (escludendo valori di Paces)
         if 'Config' in wb.sheetnames:
             update_config_sheet(wb['Config'], config)
+        
+        # Estrai i valori di ritmo, potenza e passi vasca
+        # Prima cerca al livello principale, poi in config come fallback (per compatibilità con file vecchi)
+        paces = yaml_data.get('paces', {})
+        if not paces and 'paces' in config:
+            paces = config.get('paces', {})
+            
+        power_values = yaml_data.get('power_values', {})
+        if not power_values and 'power_values' in config:
+            power_values = config.get('power_values', {})
+            
+        swim_paces = yaml_data.get('swim_paces', {})
+        if not swim_paces and 'swim_paces' in config:
+            swim_paces = config.get('swim_paces', {})
         
         # Aggiorna i ritmi in base al tipo di sport - ora entrambi nel foglio Paces
         if 'Paces' in wb.sheetnames:
@@ -198,44 +214,58 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
             # Dobbiamo rilevare dove sono le sezioni per running e cycling
             running_section_start = None
             running_section_end = None
-            cycling_section_start = None
-            cycling_section_end = None
+            power_section_start = None
+            power_section_end = None
+            swimming_section_start = None
+            swimming_section_end = None
             
             for row in range(1, paces_sheet.max_row + 1):
                 cell_value = paces_sheet.cell(row=row, column=1).value
                 if isinstance(cell_value, str) and "RITMI PER LA CORSA" in cell_value:
                     running_section_start = row + 1
-                elif isinstance(cell_value, str) and "VELOCITÀ PER IL CICLISMO" in cell_value:
+                elif isinstance(cell_value, str) and "POTENZA PER IL CICLISMO" in cell_value:
                     if running_section_start and not running_section_end:
                         running_section_end = row - 2  # -2 per escludere la riga vuota
-                    cycling_section_start = row + 1
+                    power_section_start = row + 1
+                elif isinstance(cell_value, str) and "PASSI VASCA PER IL NUOTO" in cell_value:
+                    if power_section_start and not power_section_end:
+                        power_section_end = row - 2
+                    swimming_section_start = row + 1
             
-            # Se non abbiamo trovato la fine della sezione cycling, è l'ultima riga prima della nota
-            if cycling_section_start and not cycling_section_end:
-                for row in range(cycling_section_start, paces_sheet.max_row + 1):
+            # Se non abbiamo trovato la fine della sezione swimming, è l'ultima riga prima della nota
+            if swimming_section_start and not swimming_section_end:
+                for row in range(swimming_section_start, paces_sheet.max_row + 1):
                     if not paces_sheet.cell(row=row, column=1).value:
-                        cycling_section_end = row - 1
+                        swimming_section_end = row - 1
                         break
                 # Se ancora non troviamo la fine, prendiamo l'ultima riga
-                if not cycling_section_end:
-                    cycling_section_end = paces_sheet.max_row - 1  # -1 per escludere la nota
+                if not swimming_section_end:
+                    swimming_section_end = paces_sheet.max_row - 1  # -1 per escludere la nota
             
-            # Aggiorna i valori in base al tipo di sport
-            if sport_type == "running" and running_section_start and running_section_end:
-                # Aggiorna i valori per la corsa dalle configurazioni
-                running_values = config.get('paces', {})
+            # Se non abbiamo trovato la fine della sezione power, è fino all'inizio della sezione swimming
+            if power_section_start and not power_section_end and swimming_section_start:
+                power_section_end = swimming_section_start - 2
+            
+            # Aggiorna i valori per la corsa
+            if running_section_start and running_section_end:
                 for row in range(running_section_start, running_section_end + 1):
                     name = paces_sheet.cell(row=row, column=1).value
-                    if name in running_values:
-                        paces_sheet.cell(row=row, column=2).value = running_values[name]
+                    if name in paces:
+                        paces_sheet.cell(row=row, column=2).value = paces[name]
             
-            elif sport_type == "cycling" and cycling_section_start and cycling_section_end:
-                # Aggiorna i valori per il ciclismo dalle configurazioni
-                cycling_values = config.get('speeds', {})
-                for row in range(cycling_section_start, cycling_section_end + 1):
+            # Aggiorna i valori per il ciclismo
+            if power_section_start and power_section_end:
+                for row in range(power_section_start, power_section_end + 1):
                     name = paces_sheet.cell(row=row, column=1).value
-                    if name in cycling_values:
-                        paces_sheet.cell(row=row, column=2).value = cycling_values[name]
+                    if name in power_values:
+                        paces_sheet.cell(row=row, column=2).value = power_values[name]
+                        
+            # Aggiorna i valori per il nuoto
+            if swimming_section_start and swimming_section_end:
+                for row in range(swimming_section_start, swimming_section_end + 1):
+                    name = paces_sheet.cell(row=row, column=1).value
+                    if name in swim_paces:
+                        paces_sheet.cell(row=row, column=2).value = swim_paces[name]
         
         # Aggiorna le frequenze cardiache
         if 'HeartRates' in wb.sheetnames:
@@ -271,11 +301,13 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
             # Imposta il nome dell'atleta se presente
             if 'athlete_name' in config:
                 workouts_sheet['A1'] = f"Atleta: {config['athlete_name']}"
+            elif 'athlete_name' in yaml_data:  # Controlla anche nella radice del YAML
+                workouts_sheet['A1'] = f"Atleta: {yaml_data['athlete_name']}"
             
-            # Ottieni la lista di allenamenti (escluso 'config')
+            # Ottieni la lista di allenamenti (escluso chiavi di configurazione)
             workouts = []
             for name, steps in yaml_data.items():
-                if name != 'config' and isinstance(steps, list):
+                if name not in ['config', 'paces', 'power_values', 'swim_paces', 'athlete_name'] and isinstance(steps, list):
                     # Estrai informazioni dall'allenamento
                     match = re.match(r'W(\d+)S(\d+)\s+(.*)', name)
                     if match:
@@ -322,15 +354,26 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
                                      end_color=week_colors[current_color_index],
                                      fill_type="solid")
                 
+                # Formatta il tipo di sport con l'emoji appropriata
+                sport_icons = {
+                    "running": "🏃",
+                    "cycling": "🚴",
+                    "swimming": "🏊"
+                }
+                sport_display = workout_sport_type.capitalize()
+                if workout_sport_type in sport_icons:
+                    sport_display = f"{sport_icons[workout_sport_type]} {sport_display}"
+                
                 # Aggiungi valori alle celle
                 workouts_sheet.cell(row=row, column=1, value=week)
                 workouts_sheet.cell(row=row, column=2, value=workout_date)
                 workouts_sheet.cell(row=row, column=3, value=session)
-                workouts_sheet.cell(row=row, column=4, value=description)
-                workouts_sheet.cell(row=row, column=5, value=steps_text)
+                workouts_sheet.cell(row=row, column=4, value=sport_display)
+                workouts_sheet.cell(row=row, column=5, value=description)
+                workouts_sheet.cell(row=row, column=6, value=steps_text)
                 
                 # Applica colore di sfondo e bordo a tutte le celle della riga
-                for col in range(1, 6):  # Colonne A-E
+                for col in range(1, 7):  # Colonne A-F (6 colonne)
                     cell = workouts_sheet.cell(row=row, column=col)
                     cell.fill = row_fill
                     cell.border = thin_border
@@ -359,8 +402,9 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
             workouts_sheet.column_dimensions['A'].width = 10  # Week
             workouts_sheet.column_dimensions['B'].width = 15  # Date
             workouts_sheet.column_dimensions['C'].width = 10  # Session
-            workouts_sheet.column_dimensions['D'].width = 25  # Description
-            workouts_sheet.column_dimensions['E'].width = 60  # Steps
+            workouts_sheet.column_dimensions['D'].width = 15  # Sport
+            workouts_sheet.column_dimensions['E'].width = 25  # Description
+            workouts_sheet.column_dimensions['F'].width = 60  # Steps
         
         # Crea un foglio Examples unificato con esempi per entrambi i tipi di sport
         create_unified_examples_sheet(wb)
@@ -467,6 +511,7 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     Converte un file Excel strutturato in un file YAML compatibile con garmin-planner.
     Include supporto per estrarre le date degli allenamenti e la data della gara.
     Ora estrae sia paces che power_values e swim_paces indipendentemente dal tipo di sport.
+    Mantiene i valori di ritmo, potenza e passi vasca solo nel foglio Paces senza duplicarli in Config.
     
     Args:
         excel_file: Percorso del file Excel di input
@@ -517,21 +562,20 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
         raise ValueError(f"Errore nel caricamento del foglio 'Workouts': {str(e)}")
     
     # Dizionario che conterrà il piano completo
-    plan = {'config': {
-        'heart_rates': {},
-        'paces': {},
-        'power_values': {}, # Sezione per i valori di potenza
-        'swim_paces': {},  # Sezione per i passi vasca
-        'margins': {
-            'faster': '0:03',
-            'slower': '0:03',
-            'power_up': 10,       # Margine superiore per potenza in Watt
-            'power_down': 10,     # Margine inferiore per potenza in Watt
-            'hr_up': 5,
-            'hr_down': 5
-        },
-        'name_prefix': '',
-    }}
+    plan = {
+        'config': {
+            'heart_rates': {},
+            'margins': {
+                'faster': '0:03',
+                'slower': '0:03',
+                'power_up': 10,       # Margine superiore per potenza in Watt
+                'power_down': 10,     # Margine inferiore per potenza in Watt
+                'hr_up': 5,
+                'hr_down': 5
+            },
+            'name_prefix': '',
+        }
+    }
     
     # Estrai il nome atleta dalla prima riga se presente
     try:
@@ -541,8 +585,9 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
         if athlete_text and athlete_text.strip().startswith("Atleta:"):
             athlete_name = athlete_text.replace("Atleta:", "").strip()
             if athlete_name:
-                # Aggiungi il nome dell'atleta alla configurazione
+                # Aggiungi il nome dell'atleta sia alla radice che nella sottosezione config
                 plan['config']['athlete_name'] = athlete_name
+                plan['athlete_name'] = athlete_name  # Aggiungi anche alla radice per compatibilità
                 print(f"Nome atleta estratto: {athlete_name}")
     except Exception as e:
         print(f"Nota: impossibile estrarre il nome dell'atleta: {str(e)}")
@@ -628,18 +673,37 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
         if not preferred_days_rows.empty and pd.notna(preferred_days_rows.iloc[0, 1]):
             preferred_days_value = str(preferred_days_rows.iloc[0, 1]).strip()
             plan['config']['preferred_days'] = preferred_days_value
+        
+        # Estrai sport_type se presente
+        sport_type_rows = config_df[config_df.iloc[:, 0] == 'sport_type']
+        if not sport_type_rows.empty and pd.notna(sport_type_rows.iloc[0, 1]):
+            sport_type_value = str(sport_type_rows.iloc[0, 1]).strip()
+            plan['config']['sport_type'] = sport_type_value
+        
+        # Estrai athlete_name se presente
+        athlete_name_rows = config_df[config_df.iloc[:, 0] == 'athlete_name']
+        if not athlete_name_rows.empty and pd.notna(athlete_name_rows.iloc[0, 1]):
+            athlete_name = str(athlete_name_rows.iloc[0, 1]).strip()
+            if athlete_name:
+                plan['config']['athlete_name'] = athlete_name
+                plan['athlete_name'] = athlete_name  # Anche nella radice per compatibilità
+                print(f"Nome atleta trovato nella configurazione: {athlete_name}")
+    
+    # Assicurati che il nome dell'atleta sia nella configurazione principale
+    if 'athlete_name' in plan:
+        plan['config']['athlete_name'] = plan['athlete_name'] 
+    elif 'athlete_name' in plan['config']:
+        plan['athlete_name'] = plan['config']['athlete_name']
     
     # NUOVA IMPLEMENTAZIONE: Utilizzare il parser migliorato per estrarre ritmi, potenza e passi vasca
+    # Ora li mettiamo direttamente nelle sezioni principali del piano, non dentro config
     if 'Paces' in xls.sheet_names:
         paces, swim_paces, power_values = extract_paces_and_speeds_from_excel(excel_file)
         
-        # Aggiorna il piano con i valori estratti
-        if paces:
-            plan['config']['paces'] = paces
-        if swim_paces:
-            plan['config']['swim_paces'] = swim_paces
-        if power_values:
-            plan['config']['power_values'] = power_values
+        # Aggiungi direttamente al piano (non dentro config)
+        plan['paces'] = paces
+        plan['swim_paces'] = swim_paces
+        plan['power_values'] = power_values
     
     # Estrai le frequenze cardiache
     if 'HeartRates' in xls.sheet_names:
@@ -674,6 +738,11 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
         week = str(int(row['Week'])).zfill(2)  # Formatta come 01, 02, ecc.
         session = str(int(row['Session'])).zfill(2)
         description = str(row['Description']).strip()
+        
+        # Salta le righe con description "athlete_name" (che potrebbero essere importate erroneamente)
+        if description.lower() == "athlete_name" or "athlete_name" in description.lower():
+            print(f"Ignorata riga con description '{description}' (non è un allenamento valido)")
+            continue
         
         # Crea il nome completo dell'allenamento (senza includere la data)
         full_name = f"W{week}S{session} {description}"
@@ -733,6 +802,7 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     add_comments_to_yaml(output_file, workout_descriptions)
     
     return plan
+
 
 def create_unified_examples_sheet(workbook):
     """
@@ -1256,6 +1326,7 @@ def update_paces_sheet(sheet, paces):
 def update_config_sheet(sheet, config):
     """
     Aggiorna il foglio Config con i dati dalla configurazione YAML.
+    Esclude i valori già presenti nel foglio Paces (paces, power_values, swim_paces).
     
     Args:
         sheet: Foglio Excel Config
@@ -1271,11 +1342,11 @@ def update_config_sheet(sheet, config):
             config_rows[key] = row
     
     # Liste delle chiavi da gestire - RIMUOVERE 'sport_type'
-    priority_keys = ['name_prefix', 'margins', 'race_day', 'preferred_days']
+    priority_keys = ['name_prefix', 'margins', 'race_day', 'preferred_days', 'athlete_name']
     
     # Chiavi da NON includere nelle righe di Config in quanto già presenti nei loro fogli dedicati
     # o perché non devono essere mostrate nel foglio Config
-    excluded_keys = ['paces', 'speeds', 'swim_paces', 'heart_rates', 'athlete_name', 'sport_type']
+    excluded_keys = ['paces', 'speeds', 'swim_paces', 'heart_rates', 'power_values']
     
     # Prima gestisci le chiavi prioritarie
     for key in priority_keys:
@@ -1319,7 +1390,7 @@ def update_config_sheet(sheet, config):
                         sheet.cell(row=row_index, column=2).value = value
     
     # Poi gestisci altre chiavi che potrebbero essere presenti nel config,
-    # ma escludiamo le chiavi che non vanno nel foglio Config
+    # ma escludiamo le chiavi che non vanno nel foglio Config o sono già gestite nei fogli dedicati
     for key, value in config.items():
         if key not in priority_keys and key not in excluded_keys:
             if key in config_rows:
@@ -1690,10 +1761,11 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     """
     Create a sample Excel file with the expected structure for the training plan.
     Always includes running paces, power values for cycling and swimming paces in a unified Paces sheet.
+    Now includes workout examples for all three sports regardless of the primary sport type.
     
     Args:
         output_file: Path for the output Excel file
-        sport_type: Type of sport ('running', 'cycling', or 'swimming') - usato solo per impostare esempi predefiniti
+        sport_type: Type of sport ('running', 'cycling', or 'swimming') - used to determine the primary sport
         
     Returns:
         Path to the created Excel file, or None if there was an error
@@ -1719,8 +1791,17 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
         bottom=Side(style='thin')
     )
 
+    # Genera un suffisso casuale per il prefisso del nome
     random_suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     prefix = f"MYRUN_{random_suffix}_"
+    
+    # Generate a random athlete name
+    athlete_names = [
+        "Mario Rossi", "Laura Bianchi", "Andrea Verdi", "Giulia Neri", 
+        "Marco Esposito", "Alessia Romano", "Luca Ferrari", "Elena Russo",
+        "Giovanni Marino", "Sofia Greco", "Matteo Bruno", "Elisa Ricci"
+    ]
+    athlete_name = random.choice(athlete_names)
     
     # Config sheet
     config_sheet = wb.active
@@ -1737,23 +1818,31 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     config_sheet['A2'] = 'name_prefix'
     config_sheet['B2'] = prefix
     
+    # Aggiungi nome atleta nella configurazione
+    config_sheet['A3'] = 'athlete_name'
+    config_sheet['B3'] = athlete_name
+    
     # Imposta i margini appropriati 
-    config_sheet['A3'] = 'margins'
-    config_sheet['B3'] = '0:03'   # faster in min:sec
-    config_sheet['C3'] = '0:03'   # slower in min:sec
-    config_sheet['D3'] = 5        # hr_up
-    config_sheet['E3'] = 5        # hr_down
+    config_sheet['A4'] = 'margins'
+    config_sheet['B4'] = '0:03'   # faster in min:sec
+    config_sheet['C4'] = '0:03'   # slower in min:sec
+    config_sheet['D4'] = 5        # hr_up
+    config_sheet['E4'] = 5        # hr_down
     
     # Aggiungi race_day (data gara)
-    config_sheet['A4'] = 'race_day'
+    config_sheet['A5'] = 'race_day'
     # Imposta una data di esempio 6 mesi nel futuro
     from datetime import datetime, timedelta
     future_date = datetime.now() + timedelta(days=180)
-    config_sheet['B4'] = future_date.strftime("%Y-%m-%d")
+    config_sheet['B5'] = future_date.strftime("%Y-%m-%d")
     
     # Aggiungi preferred_days (giorni preferiti)
-    config_sheet['A5'] = 'preferred_days'
-    config_sheet['B5'] = '[1, 3, 5]'  # Martedì, Giovedì, Sabato
+    config_sheet['A6'] = 'preferred_days'
+    config_sheet['B6'] = '[1, 3, 5]'  # Martedì, Giovedì, Sabato
+    
+    # Imposta il tipo di sport principale basato sul parametro
+    config_sheet['A7'] = 'sport_type'
+    config_sheet['B7'] = sport_type
     
     # Format header
     header_fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
@@ -1797,14 +1886,12 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     # Single Workouts sheet for all workouts
     workouts_sheet = wb.create_sheet(title='Workouts')
     
-    # Add a row for the athlete's name
-    # Create a merged cell for the athlete's name
-    workouts_sheet.merge_cells('A1:F1')  # Aggiunto 'F' per la nuova colonna Sport
+    # Add athlete name in the merged cell
+    workouts_sheet.merge_cells('A1:F1')
     athlete_cell = workouts_sheet['A1']
-    athlete_cell.value = "Atleta: "  # Prepared to be filled in
+    athlete_cell.value = f"Atleta: {athlete_name}"
     athlete_cell.alignment = Alignment(horizontal='center', vertical='center')
     athlete_cell.font = Font(size=12, bold=True)
-    # Add border to the athlete cell
     athlete_cell.border = thin_border
 
     # Headers in row 2
@@ -1822,42 +1909,33 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
         cell.fill = header_fill
         cell.border = thin_border  # Add border to all header cells
     
-    # Esempi di allenamenti in base al tipo di sport
-    workouts = []
+    # Generate sample dates starting from today
+    today = datetime.now()
     
-    if sport_type == "running":
-        # Esempi per la corsa
-        workouts = [
-            # Week, Session, Sport, Description, Steps
-            (1, 1, "running", 'Easy run', 'warmup: 10min @ Z1_HR\ninterval: 30min @ Z2\ncooldown: 5min @ Z1_HR'),
-            (1, 2, "running", 'Short intervals', 'warmup: 15min @ Z1_HR\nrepeat 5:\n  interval: 400m @ Z5\n  recovery: 2min @ Z1_HR\ncooldown: 10min @ Z1_HR'),
-            (1, 3, "running", 'Long slow run', 'warmup: 10min @ Z1_HR\ninterval: 45min @ Z2\ncooldown: 5min @ Z1_HR'),
-            (2, 1, "running", 'Recovery run', 'interval: 30min @ Z1_HR'),
-            (2, 2, "running", 'Threshold run', 'warmup: 15min @ Z1_HR\ninterval: 20min @ Z4\ncooldown: 10min @ Z1_HR'),
-            (2, 3, "running", 'Progressive long run', 'warmup: 10min @ Z1_HR\ninterval: 30min @ Z2\ninterval: 20min @ Z3\ncooldown: 10min @ Z1_HR')
-        ]
-    elif sport_type == "cycling":
-        # Esempi per il ciclismo
-        workouts = [
-            # Week, Session, Sport, Description, Steps
-            (1, 1, "cycling", 'Easy ride', 'warmup: 15min @hr Z1_HR\ninterval: 45min @pwr Z2\ncooldown: 10min @hr Z1_HR'),
-            (1, 2, "cycling", 'Sweet Spot', 'warmup: 20min @hr Z1_HR\nrepeat 3:\n  interval: 12min @pwr sweet_spot\n  recovery: 3min @hr Z1_HR\ncooldown: 15min @hr Z1_HR'),
-            (1, 3, "cycling", 'Endurance ride', 'warmup: 15min @hr Z1_HR\ninterval: 90min @pwr Z2\ncooldown: 10min @hr Z1_HR'),
-            (2, 1, "cycling", 'Recovery ride', 'interval: 45min @hr Z1_HR'),
-            (2, 2, "cycling", 'Threshold', 'warmup: 20min @hr Z1_HR\ninterval: 3min @pwr 95%\ninterval: 2min @hr Z1_HR\nrepeat 3:\n  interval: 8min @pwr threshold\n  recovery: 4min @hr Z1_HR\ncooldown: 15min @hr Z1_HR'),
-            (2, 3, "cycling", 'VO2max intervals', 'warmup: 15min @hr Z1_HR\nrepeat 6:\n  interval: 3min @pwr 115%\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR')
-        ]
-    else:  # swimming
-        # Esempi per il nuoto
-        workouts = [
-            # Week, Session, Sport, Description, Steps
-            (1, 1, "swimming", 'Easy swim', 'warmup: 200m @ Z1_HR\ninterval: 600m @ Z2\ncooldown: 100m @ Z1_HR'),
-            (1, 2, "swimming", 'Short intervals', 'warmup: 200m @ Z1_HR\nrepeat 5:\n  interval: 100m @ Z5\n  recovery: 30s @ Z1_HR\ncooldown: 100m @ Z1_HR'),
-            (1, 3, "swimming", 'Long endurance swim', 'warmup: 200m @ Z1_HR\ninterval: 1000m @ Z2\ncooldown: 100m @ Z1_HR'),
-            (2, 1, "swimming", 'Recovery swim', 'interval: 500m @ Z1_HR'),
-            (2, 2, "swimming", 'Technique focus', 'warmup: 200m @ Z1_HR\nrepeat 4:\n  interval: 50m @ Z3 -- Tecnica bracciata\n  interval: 50m @ Z3 -- Tecnica gambata\n  recovery: 20s @ Z1_HR\ncooldown: 100m @ Z1_HR'),
-            (2, 3, "swimming", 'Progressive swim', 'warmup: 200m @ Z1_HR\ninterval: 400m @ Z2\ninterval: 200m @ Z3\ncooldown: 100m @ Z1_HR')
-        ]
+    # Define example workouts for all three sports
+    running_workouts = [
+        # Week, Session, Sport, Description, Steps
+        (1, 1, "running", 'Easy run', 'warmup: 10min @ Z1_HR\ninterval: 30min @ Z2\ncooldown: 5min @ Z1_HR'),
+        (1, 2, "running", 'Short intervals', 'warmup: 15min @ Z1_HR\nrepeat 5:\n  interval: 400m @ Z5\n  recovery: 2min @ Z1_HR\ncooldown: 10min @ Z1_HR'),
+        (1, 3, "running", 'Long slow run', 'warmup: 10min @ Z1_HR\ninterval: 45min @ Z2\ncooldown: 5min @ Z1_HR'),
+    ]
+    
+    cycling_workouts = [
+        # Week, Session, Sport, Description, Steps
+        (2, 1, "cycling", 'Easy ride', 'warmup: 15min @hr Z1_HR\ninterval: 45min @pwr Z2\ncooldown: 10min @hr Z1_HR'),
+        (2, 2, "cycling", 'Sweet Spot', 'warmup: 20min @hr Z1_HR\nrepeat 3:\n  interval: 12min @pwr sweet_spot\n  recovery: 3min @hr Z1_HR\ncooldown: 15min @hr Z1_HR'),
+        (2, 3, "cycling", 'Threshold intervals', 'warmup: 15min @hr Z1_HR\nrepeat 4:\n  interval: 8min @pwr threshold\n  recovery: 4min @hr Z1_HR\ncooldown: 10min @hr Z1_HR'),
+    ]
+    
+    swimming_workouts = [
+        # Week, Session, Sport, Description, Steps
+        (3, 1, "swimming", 'Easy swim', 'warmup: 200m @ Z1_HR\ninterval: 600m @ Z2\ncooldown: 100m @ Z1_HR'),
+        (3, 2, "swimming", 'Technique focus', 'warmup: 200m @ Z1_HR\nrepeat 4:\n  interval: 50m @ Z3 -- Tecnica bracciata\n  interval: 50m @ Z3 -- Tecnica gambata\n  recovery: 20s @ Z1_HR\ncooldown: 100m @ Z1_HR'),
+        (3, 3, "swimming", 'Sprint intervals', 'warmup: 300m @ Z1_HR\nrepeat 6:\n  interval: 50m @ Z5\n  recovery: 30s @ Z1_HR\ncooldown: 200m @ Z1_HR'),
+    ]
+    
+    # Combine all workouts
+    all_workouts = running_workouts + cycling_workouts + swimming_workouts
     
     # Define alternating colors for weeks
     week_colors = [
@@ -1880,11 +1958,16 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     current_week = None
     current_color_index = 0
     
-    for i, (week, session, sport, description, steps) in enumerate(workouts, start=3):
+    for i, (week, session, sport, description, steps) in enumerate(all_workouts, start=3):
         # If the week changes, change the color
         if week != current_week:
             current_week = week
-            current_color_index = (current_color_index + 1) % len(week_colors)
+            current_color_index = (week - 1) % len(week_colors)
+        
+        # Generate a sample date (today + day offset based on week/session)
+        day_offset = (week - 1) * 7 + session  # Simple pattern: week 1/session 1 = day 1, week 1/session 2 = day 2, etc.
+        sample_date = today + timedelta(days=day_offset)
+        sample_date_str = sample_date.strftime("%Y-%m-%d")
             
         # Background color for the current row
         row_fill = PatternFill(start_color=week_colors[current_color_index], 
@@ -1898,7 +1981,7 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
         
         # Assign values to cells
         workouts_sheet[f'A{i}'] = week
-        workouts_sheet[f'B{i}'] = None  # Empty Date column to be filled by Plan function
+        workouts_sheet[f'B{i}'] = sample_date_str  # Add sample date
         workouts_sheet[f'C{i}'] = session
         workouts_sheet[f'D{i}'] = sport_display  # Sport column
         workouts_sheet[f'E{i}'] = description

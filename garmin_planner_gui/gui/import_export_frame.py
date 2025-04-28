@@ -823,8 +823,30 @@ class ImportExportFrame(ttk.Frame):
             
             # Ora importa dal file YAML
             if yaml_data:
+                # Estrai il nome dell'atleta se presente
+                if 'athlete_name' in yaml_data:
+                    athlete_name = yaml_data.pop('athlete_name')
+                    # Aggiorna il nome dell'atleta nella configurazione principale
+                    self.controller.config['athlete_name'] = athlete_name
+                    # E anche in workout_config per mantenere la coerenza
+                    if 'workout_config' not in self.controller.config:
+                        self.controller.config['workout_config'] = {}
+                    self.controller.config['workout_config']['athlete_name'] = athlete_name
+                    self.write_log(f"Nome atleta aggiornato: {athlete_name}")
+                
                 # Estrai la configurazione se presente
                 if 'config' in yaml_data:
+                    # Controlla anche se il nome atleta è nella configurazione
+                    if 'athlete_name' in yaml_data['config']:
+                        athlete_name = yaml_data['config']['athlete_name']
+                        # Aggiorna il nome dell'atleta nella configurazione principale
+                        self.controller.config['athlete_name'] = athlete_name
+                        # E anche in workout_config per mantenere la coerenza
+                        if 'workout_config' not in self.controller.config:
+                            self.controller.config['workout_config'] = {}
+                        self.controller.config['workout_config']['athlete_name'] = athlete_name
+                        self.write_log(f"Nome atleta aggiornato: {athlete_name}")
+                    
                     # Aggiorna la configurazione
                     new_config = yaml_data.pop('config')
                     
@@ -833,16 +855,34 @@ class ImportExportFrame(ttk.Frame):
                         self.controller.config['workout_config'] = {}
                     
                     # Aggiorna le varie sezioni
-                    for section in ['paces', 'speeds', 'swim_paces', 'heart_rates', 'margins']:
+                    for section in ['margins', 'name_prefix', 'sport_type', 'heart_rates', 'preferred_days']:
                         if section in new_config:
                             self.controller.config['workout_config'][section] = new_config[section]
                     
-                    # Altri parametri
-                    for param in ['name_prefix', 'sport_type']:
-                        if param in new_config:
-                            self.controller.config['workout_config'][param] = new_config[param]
-                    
                     self.write_log("Configurazione aggiornata")
+                
+                # Estrai paces, power_values e swim_paces dalle chiavi principali
+                # Questi sono ora fuori dalla sezione config (per evitare duplicazione)
+                if 'paces' in yaml_data:
+                    paces_data = yaml_data.pop('paces')
+                    if 'workout_config' not in self.controller.config:
+                        self.controller.config['workout_config'] = {}
+                    self.controller.config['workout_config']['paces'] = paces_data
+                    self.write_log("Ritmi per la corsa aggiornati")
+                    
+                if 'power_values' in yaml_data:
+                    power_data = yaml_data.pop('power_values')
+                    if 'workout_config' not in self.controller.config:
+                        self.controller.config['workout_config'] = {}
+                    self.controller.config['workout_config']['power_values'] = power_data
+                    self.write_log("Valori potenza per il ciclismo aggiornati")
+                    
+                if 'swim_paces' in yaml_data:
+                    swim_data = yaml_data.pop('swim_paces')
+                    if 'workout_config' not in self.controller.config:
+                        self.controller.config['workout_config'] = {}
+                    self.controller.config['workout_config']['swim_paces'] = swim_data
+                    self.write_log("Passi vasca per il nuoto aggiornati")
                 
                 # Conta gli allenamenti
                 total_workouts = len(yaml_data)
@@ -855,6 +895,16 @@ class ImportExportFrame(ttk.Frame):
                 
                 # Importa gli allenamenti
                 for name, steps in yaml_data.items():
+                    # Salta athlete_name e config che non sono allenamenti
+                    if name in ['athlete_name', 'config', 'paces', 'power_values', 'swim_paces']:
+                        continue
+                        
+                    # Salta se name è 'athlete_name' (nel caso fosse stato erroneamente importato come allenamento)
+                    if 'athlete_name' in name.lower():
+                        self.write_log(f"Ignorato allenamento con nome '{name}' (sembra essere un nome atleta, non un allenamento)")
+                        skipped_workouts += 1
+                        continue
+                    
                     # Verifica se esiste già
                     if name in current_names:
                         if overwrite:
@@ -876,6 +926,12 @@ class ImportExportFrame(ttk.Frame):
                 # Aggiorna la lista degli allenamenti
                 self.controller.workout_editor_frame.refresh_workout_list()
                 
+                # Aggiorna il nome dell'atleta nell'interfaccia, se esiste il campo
+                if hasattr(self.controller.workout_editor_frame, 'athlete_name_var'):
+                    self.controller.workout_editor_frame.athlete_name_var.set(
+                        self.controller.config.get('athlete_name', '')
+                    )
+                
                 # Mostra un messaggio di conferma
                 messagebox.showinfo("Importazione completata", 
                                   f"Importati {imported_workouts} allenamenti.\n"
@@ -884,7 +940,7 @@ class ImportExportFrame(ttk.Frame):
                 
                 # Log
                 self.write_log(f"Importazione completata: {imported_workouts} importati, {skipped_workouts} saltati")
-            
+                
             # Elimina il file temporaneo
             try:
                 os.unlink(tmp_filename)
@@ -1197,9 +1253,30 @@ class ImportExportFrame(ttk.Frame):
             # Crea il dizionario per l'esportazione
             export_data = {}
             
-            # Aggiungi la configurazione
+            # Aggiungi la configurazione base (esclusi i valori di paces, power_values e swim_paces)
             if 'workout_config' in self.controller.config:
-                export_data['config'] = self.controller.config['workout_config']
+                # Copia la configurazione per non modificare l'originale
+                config = dict(self.controller.config['workout_config'])
+                
+                # Escludi i valori paces, power_values e swim_paces dalla config
+                # e mettili come chiavi principali del YAML
+                if 'paces' in config:
+                    export_data['paces'] = config.pop('paces')
+                
+                if 'power_values' in config:
+                    export_data['power_values'] = config.pop('power_values')
+                    
+                if 'swim_paces' in config:
+                    export_data['swim_paces'] = config.pop('swim_paces')
+                
+                # Il resto della configurazione va in config
+                export_data['config'] = config
+                
+                # Aggiungi il nome dell'atleta alla configurazione esportata
+                if 'athlete_name' in self.controller.config and self.controller.config['athlete_name']:
+                    export_data['config']['athlete_name'] = self.controller.config['athlete_name']
+                    # Aggiungi anche come chiave principale per compatibilità
+                    export_data['athlete_name'] = self.controller.config['athlete_name']
             
             # Aggiungi gli allenamenti
             for name, steps in workouts:

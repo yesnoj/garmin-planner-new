@@ -64,9 +64,27 @@ class WorkoutEditorFrame(ttk.Frame):
         lower_frame = ttk.Frame(main_frame)
         lower_frame.pack(fill=tk.X, pady=(5, 0))
         
+        # Frame per il nome dell'atleta
+        athlete_frame = ttk.Frame(lower_frame)
+        athlete_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Campo per il nome dell'atleta
+        ttk.Label(athlete_frame, text="Nome Atleta:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Ottieni il nome atleta dalla configurazione
+        athlete_name = self.controller.config.get('athlete_name', '')
+        
+        # Variabile per tenere traccia del nome atleta
+        self.athlete_name_var = tk.StringVar(value=athlete_name)
+        ttk.Entry(athlete_frame, textvariable=self.athlete_name_var, width=30).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        # Pulsante per salvare il nome atleta
+        ttk.Button(athlete_frame, text="Salva Nome Atleta", 
+                  command=self.save_athlete_name).pack(side=tk.LEFT)
+        
         # Pulsanti principali
         button_frame = ttk.Frame(lower_frame)
-        button_frame.pack(fill=tk.X)
+        button_frame.pack(fill=tk.X, pady=(0, 5))
         
         # Pulsante per sincronizzare con Garmin Connect
         self.sync_button = ttk.Button(button_frame, text="Sincronizza con Garmin Connect", 
@@ -87,6 +105,36 @@ class WorkoutEditorFrame(ttk.Frame):
                                style="Status.TLabel")
         status_label.pack(anchor=tk.W, pady=5)
     
+
+    def save_athlete_name(self):
+        """Salva il nome dell'atleta nella configurazione"""
+        # Ottieni il nome dell'atleta
+        athlete_name = self.athlete_name_var.get().strip()
+        
+        # Salva il nome dell'atleta sia nella radice che in workout_config
+        self.controller.config['athlete_name'] = athlete_name
+        
+        # Assicurati che workout_config esista
+        if 'workout_config' not in self.controller.config:
+            self.controller.config['workout_config'] = {}
+        
+        # Salva anche in workout_config per la compatibilità con l'export
+        self.controller.config['workout_config']['athlete_name'] = athlete_name
+        
+        # Salva la configurazione
+        from garmin_planner_gui.gui.utils import save_config
+        save_config(self.controller.config)
+        
+        # Aggiorna l'interfaccia
+        self.status_var.set(f"Nome atleta impostato: {athlete_name}")
+        self.controller.set_status(f"Nome atleta impostato: {athlete_name}")
+        
+        # Mostra conferma
+        messagebox.showinfo("Nome atleta salvato", 
+                          f"Il nome atleta '{athlete_name}' è stato salvato.", 
+                          parent=self)
+
+
     def create_workout_list(self, parent):
         """Crea la lista degli allenamenti"""
         # Barra degli strumenti sopra la lista
@@ -763,7 +811,7 @@ class WorkoutEditorFrame(ttk.Frame):
             # Crea una finestra top-level
             top = tk.Toplevel(self)
             top.title("Seleziona data")
-            top.geometry("300x250")
+            top.geometry("450x300")
             top.transient(self)
             top.grab_set()
             
