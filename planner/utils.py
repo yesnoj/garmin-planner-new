@@ -263,6 +263,108 @@ def get_pace_range(orig_pace, margins):
         pace_2 = m.group(2)
         return (pace_1, pace_2)
 
+
+def lighten_color(hex_color):
+    """Rende più chiaro un colore hexadecimale mescolandolo con bianco"""
+    # Converte hex_color in componenti RGB
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    
+    # Mescola con bianco (255,255,255) con un rapporto 40/60
+    r = r * 0.6 + 255 * 0.4
+    g = g * 0.6 + 255 * 0.4
+    b = b * 0.6 + 255 * 0.4
+    
+    # Converte in hex e restituisce
+    return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
+
+def get_step_display_text(step_type, step_detail):
+    """Get a display text for a step"""
+    # Handle case where step_detail is a list (old format)
+    if isinstance(step_detail, list):
+        return f"{step_type} ({len(step_detail)} steps)"
+    
+    # Extract the measure and zone
+    if ' @ ' in step_detail:
+        measure, zone = step_detail.split(' @ ', 1)
+    elif ' @hr ' in step_detail:
+        measure, zone = step_detail.split(' @hr ', 1)
+        zone = f"@hr {zone}"
+    elif ' @spd ' in step_detail:
+        measure, zone = step_detail.split(' @spd ', 1)
+        zone = f"@spd {zone}"
+    elif ' @swim ' in step_detail:
+        measure, zone = step_detail.split(' @swim ', 1)
+        zone = f"@swim {zone}"
+    else:
+        # No zone specified
+        return step_detail.split(' -- ')[0] if ' -- ' in step_detail else step_detail
+        
+    # Remove description if any
+    if ' -- ' in zone:
+        zone = zone.split(' -- ')[0].strip()
+    
+    return f"{measure} {zone}"
+
+def get_step_visual_length(step):
+    """Calculate a visual length for a step based on its duration/distance"""
+    if 'repeat' in step:
+        # For repeat steps, sum its substeps
+        substeps = step.get('steps', [])
+        total = sum(get_step_visual_length(substep) for substep in substeps)
+        return max(total, 50)  # Minimum size for repeat blocks
+    
+    step_type = list(step.keys())[0] if isinstance(step, dict) and len(step) == 1 else "unknown"
+    step_detail = step[step_type] if step_type != "unknown" else ""
+    
+    # Handle case where step_detail is a list (old format)
+    if isinstance(step_detail, list):
+        return 50  # Default length for steps with unknown structure
+    
+    # Extract the duration/distance
+    if ' @ ' in step_detail:
+        measure = step_detail.split(' @ ')[0].strip()
+    elif ' @hr ' in step_detail:
+        measure = step_detail.split(' @hr ')[0].strip()
+    elif ' @spd ' in step_detail:
+        measure = step_detail.split(' @spd ')[0].strip()
+    elif ' @swim ' in step_detail:
+        measure = step_detail.split(' @swim ')[0].strip()
+    else:
+        measure = step_detail.strip()
+        if ' -- ' in measure:
+            measure = measure.split(' -- ')[0].strip()
+    
+    # Try to parse the measure
+    try:
+        if 'min' in measure:
+            # Duration in minutes
+            mins = float(measure.replace('min', '').strip())
+            return mins * 10  # Scale factor for minutes
+        elif 'km' in measure:
+            # Distance in km
+            km = float(measure.replace('km', '').strip())
+            return km * 50  # Scale factor for km
+        elif 'm' in measure:
+            # Distance in meters
+            m = float(measure.replace('m', '').strip())
+            return m / 20  # Scale factor for meters
+        elif 'lengths' in measure:
+            # Distance in pool lengths
+            lengths = float(measure.replace('lengths', '').strip())
+            return lengths * 2  # Scale factor for lengths
+        elif 'yd' in measure:
+            # Distance in yards
+            yd = float(measure.replace('yd', '').strip())
+            return yd / 20  # Scale factor for yards
+        else:
+            # Default length if parsing fails
+            return 50
+    except ValueError:
+        # Default length if parsing fails
+        return 50
+
 # --- Main block for testing ---
 if __name__ == "__main__":
     print("Testing hhmmss_to_seconds...")
@@ -360,3 +462,5 @@ if __name__ == "__main__":
     assert get_pace_range('04:40-04:20', None) == (280, 260)
 
     print("All tests passed!")
+
+
