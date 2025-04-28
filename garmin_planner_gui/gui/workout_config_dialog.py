@@ -1255,6 +1255,9 @@ class WorkoutConfigDialog(tk.Toplevel):
         self.update_swim_tree()
 
 
+# Correzione per l'errore in ConfigItemDialog
+# Modifica alla classe ConfigItemDialog in workout_config_dialog.py
+
 class ConfigItemDialog(tk.Toplevel):
     """Dialog per l'aggiunta o modifica di un elemento di configurazione"""
     

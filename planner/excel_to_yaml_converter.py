@@ -1368,6 +1368,11 @@ def update_config_sheet(sheet, config):
                     sheet.cell(row=row_index, column=4).value = margins['hr_up']
                 if 'hr_down' in margins and margins['hr_down'] is not None:
                     sheet.cell(row=row_index, column=5).value = margins['hr_down']
+                # Aggiungi i margini di potenza in nuove colonne
+                if 'power_up' in margins and margins['power_up'] is not None:
+                    sheet.cell(row=row_index, column=6).value = margins['power_up']
+                if 'power_down' in margins and margins['power_down'] is not None:
+                    sheet.cell(row=row_index, column=7).value = margins['power_down']
             elif key == 'preferred_days':
                 # Gestisci preferred_days come lista o stringa
                 preferred_days = config[key]
@@ -1813,6 +1818,8 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     config_sheet['C1'] = 'Slower'
     config_sheet['D1'] = 'HR Up'
     config_sheet['E1'] = 'HR Down'
+    config_sheet['F1'] = 'Power Up'  # Aggiungiamo l'intestazione per Power Up
+    config_sheet['G1'] = 'Power Down'  # Aggiungiamo l'intestazione per Power Down
     
     # Config sheet values
     config_sheet['A2'] = 'name_prefix'
@@ -1828,6 +1835,8 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     config_sheet['C4'] = '0:03'   # slower in min:sec
     config_sheet['D4'] = 5        # hr_up
     config_sheet['E4'] = 5        # hr_down
+    config_sheet['F4'] = 10       # power_up in Watt
+    config_sheet['G4'] = 10       # power_down in Watt
     
     # Aggiungi race_day (data gara)
     config_sheet['A5'] = 'race_day'
@@ -1846,7 +1855,7 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     
     # Format header
     header_fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
-    for col in ['A', 'B', 'C', 'D', 'E']:
+    for col in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:  # Aggiungiamo F e G
         config_sheet[f'{col}1'].font = Font(bold=True)
         config_sheet[f'{col}1'].fill = header_fill
     

@@ -195,14 +195,15 @@ class GarminPlannerApp(tk.Tk):
         
     def set_status(self, message):
         """Imposta il messaggio di stato globale e lo salva nei log"""
-        self.status_var.set(message)
+        # Utilizza l'etichetta di stato invece di una variabile
+        self.status_label.config(text=message)
         logging.info(message)
         
         # Se è un messaggio relativo al nome dell'atleta, assicurati di salvare la configurazione
         if "Nome atleta" in message:
             from garmin_planner_gui.gui.utils import save_config
             save_config(self.config)
-    
+        
     def update_login_status(self, message):
         """Aggiorna il messaggio di stato del login"""
         self.login_status_label.config(text=message)
