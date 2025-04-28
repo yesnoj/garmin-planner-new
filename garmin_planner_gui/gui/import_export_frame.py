@@ -716,9 +716,14 @@ class ImportExportFrame(ttk.Frame):
                     self.controller.config['workout_config'] = {}
                 
                 # Aggiorna le varie sezioni
-                for section in ['paces', 'speeds', 'swim_paces', 'heart_rates', 'margins']:
+                for section in ['paces', 'speeds', 'swim_paces', 'heart_rates', 'power_values', 'margins']:
                     if section in new_config:
-                        self.controller.config['workout_config'][section] = new_config[section]
+                        if section not in self.controller.config['workout_config']:
+                            self.controller.config['workout_config'][section] = {}
+                        
+                        # Per ogni chiave nella sezione
+                        for key, value in new_config[section].items():
+                            self.controller.config['workout_config'][section][key] = value
                 
                 # Altri parametri
                 for param in ['name_prefix', 'sport_type']:
@@ -915,12 +920,13 @@ class ImportExportFrame(ttk.Frame):
             # Crea il file di esempio
             from planner.excel_to_yaml_converter import create_sample_excel
             
+            # Passa correttamente il filename come primo parametro e il tipo di sport come secondo
             sample_file = create_sample_excel(filename, sport_type)
             
             if sample_file:
                 messagebox.showinfo("File creato", 
-                                   f"File di esempio creato con successo:\n{filename}", 
-                                   parent=self)
+                                  f"File di esempio creato con successo:\n{filename}", 
+                                  parent=self)
                 
                 # Aggiungi ai file recenti
                 self.add_to_recent_files(filename)
@@ -932,14 +938,14 @@ class ImportExportFrame(ttk.Frame):
                 self.write_log("File di esempio creato con successo")
             else:
                 messagebox.showerror("Errore", 
-                                   "Impossibile creare il file di esempio", 
-                                   parent=self)
+                                  "Impossibile creare il file di esempio", 
+                                  parent=self)
                 self.write_log("Errore nella creazione del file di esempio")
         
         except Exception as e:
             messagebox.showerror("Errore", 
-                               f"Errore durante la creazione del file di esempio: {str(e)}", 
-                               parent=self)
+                              f"Errore durante la creazione del file di esempio: {str(e)}", 
+                              parent=self)
             self.write_log(f"Errore: {str(e)}")
     
     def refresh_garmin_workouts(self):
@@ -1276,6 +1282,17 @@ class ImportExportFrame(ttk.Frame):
             # Aggiungi la configurazione
             if include_config and 'workout_config' in self.controller.config:
                 export_data['config'] = self.controller.config['workout_config']
+                
+                # Assicurati che la sezione power_values esista se non c'è
+                if 'power_values' not in export_data['config']:
+                    export_data['config']['power_values'] = {'ftp': 250}
+                
+                # Assicurati che ci siano i margini di potenza
+                if 'margins' in export_data['config']:
+                    if 'power_up' not in export_data['config']['margins']:
+                        export_data['config']['margins']['power_up'] = 10
+                    if 'power_down' not in export_data['config']['margins']:
+                        export_data['config']['margins']['power_down'] = 10
             
             # Aggiungi gli allenamenti
             for name, steps in workouts:

@@ -1355,7 +1355,7 @@ class WorkoutEditorFrame(ttk.Frame):
             return None
         
         try:
-            # Pattern per '@' o '@spd' o '@hr'
+            # Pattern per '@' o '@spd' o '@hr' o '@pwr'
             if ' @ ' in step_detail:
                 # Estrai la zona dopo '@'
                 parts = step_detail.split(' @ ', 1)
@@ -1426,7 +1426,7 @@ class WorkoutEditorFrame(ttk.Frame):
                 # Valore di default se nessuna conversione è riuscita
                 return Target('pace.zone', 2.5, 3.0)
             
-            # Velocità (ciclismo)
+            # Velocità (ciclismo vecchio stile)
             elif ' @spd ' in step_detail:
                 # Estrai la zona dopo '@spd'
                 parts = step_detail.split(' @spd ', 1)
@@ -1490,6 +1490,104 @@ class WorkoutEditorFrame(ttk.Frame):
                 # Valore di default per velocità
                 return Target('speed.zone', 5.0, 6.0)
             
+            # Potenza (ciclismo nuovo stile)
+            elif ' @pwr ' in step_detail:
+                # Estrai la zona dopo '@pwr'
+                parts = step_detail.split(' @pwr ', 1)
+                if len(parts) < 2:
+                    return None
+                    
+                zone_part = parts[1]
+                zone = zone_part.split(' -- ')[0].strip() if ' -- ' in zone_part else zone_part.strip()
+                
+                # Verifica se è una zona definita
+                power_values = self.workout_config.get('power_values', {})
+                if zone in power_values and zone != 'ftp':
+                    power_value = power_values[zone]
+                    
+                    # Gestisci diversi formati di potenza
+                    if '-' in str(power_value):
+                        # Formato intervallo (es. "230-270")
+                        power_parts = str(power_value).split('-')
+                        if len(power_parts) == 2:
+                            try:
+                                low_power = float(power_parts[0])
+                                high_power = float(power_parts[1])
+                                return Target('power.zone', low_power, high_power)
+                            except Exception as e:
+                                logging.warning(f"Errore nella conversione della potenza '{power_value}': {str(e)}")
+                    
+                    # Formato singolo valore
+                    try:
+                        power = float(power_value)
+                        # Aggiungi margini del 5%
+                        return Target('power.zone', power * 0.95, power * 1.05)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della potenza '{power_value}': {str(e)}")
+                
+                # Controlla se è una percentuale dell'FTP
+                if '%' in zone:
+                    # Formato percentuale singola (es. "75%")
+                    match = re.match(r'^(\d+)%$', zone)
+                    if match:
+                        try:
+                            percent = int(match.group(1))
+                            
+                            # Ottieni l'FTP dalla configurazione
+                            ftp = self.workout_config.get('power_values', {}).get('ftp', 250)
+                            
+                            # Calcola il valore di potenza
+                            power = int((percent / 100) * ftp)
+                            
+                            # Aggiungi margini del 5%
+                            low_power = int(power * 0.95)
+                            high_power = int(power * 1.05)
+                            
+                            logging.info(f"Convertito {zone} in {low_power}-{high_power} W (FTP: {ftp})")
+                            return Target('power.zone', low_power, high_power)
+                        except Exception as e:
+                            logging.warning(f"Errore nella conversione della percentuale FTP '{zone}': {str(e)}")
+                    
+                    # Formato intervallo percentuale (es. "75-85%")
+                    match = re.match(r'^(\d+)-(\d+)%$', zone)
+                    if match:
+                        try:
+                            low_percent = int(match.group(1))
+                            high_percent = int(match.group(2))
+                            
+                            # Ottieni l'FTP dalla configurazione
+                            ftp = self.workout_config.get('power_values', {}).get('ftp', 250)
+                            
+                            # Calcola i valori di potenza
+                            low_power = int((low_percent / 100) * ftp)
+                            high_power = int((high_percent / 100) * ftp)
+                            
+                            logging.info(f"Convertito {zone} in {low_power}-{high_power} W (FTP: {ftp})")
+                            return Target('power.zone', low_power, high_power)
+                        except Exception as e:
+                            logging.warning(f"Errore nella conversione dell'intervallo percentuale FTP '{zone}': {str(e)}")
+                
+                # Prova come valore diretto
+                if re.match(r'^\d+$', zone):
+                    try:
+                        power = float(zone)
+                        return Target('power.zone', power * 0.95, power * 1.05)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della potenza diretta '{zone}': {str(e)}")
+                
+                # Prova come intervallo diretto
+                if re.match(r'^\d+-\d+$', zone):
+                    try:
+                        power_parts = zone.split('-')
+                        low_power = float(power_parts[0])
+                        high_power = float(power_parts[1])
+                        return Target('power.zone', low_power, high_power)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione dell'intervallo di potenza '{zone}': {str(e)}")
+                
+                # Valore di default per potenza
+                return Target('power.zone', 200, 250)
+            
             # Frequenza cardiaca
             elif ' @hr ' in step_detail:
                 # Estrai la zona dopo '@hr'
@@ -1533,8 +1631,47 @@ class WorkoutEditorFrame(ttk.Frame):
                     except Exception as e:
                         logging.warning(f"Errore nella conversione della zona HR '{zone}': {str(e)}")
                 
+                # Verifica se è un intervallo di percentuali (es. "70-80%")
+                if '%' in zone:
+                    match = re.match(r'^(\d+)-(\d+)%$', zone)
+                    if match:
+                        try:
+                            low_percent = int(match.group(1))
+                            high_percent = int(match.group(2))
+                            
+                            # Ottieni il valore max_hr dalla configurazione
+                            max_hr = self.workout_config.get('heart_rates', {}).get('max_hr', 180)
+                            
+                            # Calcola i valori di BPM
+                            low_hr = int((low_percent / 100) * max_hr)
+                            high_hr = int((high_percent / 100) * max_hr)
+                            
+                            logging.info(f"Convertito {zone} in {low_hr}-{high_hr} BPM (max_hr: {max_hr})")
+                            return Target('heart.rate.zone', low_hr, high_hr)
+                        except Exception as e:
+                            logging.warning(f"Errore nella conversione dell'intervallo percentuale '{zone}': {str(e)}")
+                    
+                    # Singola percentuale (es. "70%")
+                    match = re.match(r'^(\d+)%$', zone)
+                    if match:
+                        try:
+                            percent = int(match.group(1))
+                            
+                            # Ottieni il valore max_hr dalla configurazione
+                            max_hr = self.workout_config.get('heart_rates', {}).get('max_hr', 180)
+                            
+                            # Calcola il valore di BPM con margine di ±3%
+                            hr = int((percent / 100) * max_hr)
+                            low_hr = int(((percent - 3) / 100) * max_hr)
+                            high_hr = int(((percent + 3) / 100) * max_hr)
+                            
+                            logging.info(f"Convertito {zone} in {low_hr}-{high_hr} BPM (max_hr: {max_hr})")
+                            return Target('heart.rate.zone', low_hr, high_hr)
+                        except Exception as e:
+                            logging.warning(f"Errore nella conversione della percentuale singola '{zone}': {str(e)}")
+                
                 # Prova come valore diretto o intervallo
-                elif '-' in zone:
+                if '-' in zone:
                     try:
                         hr_parts = zone.split('-')
                         low_hr = int(hr_parts[0])

@@ -424,12 +424,15 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
         'heart_rates': {},
         'paces': {},
         'speeds': {},
-        'swim_paces': {},  # Aggiungiamo la sezione per i passi vasca
+        'swim_paces': {},  # Sezione per i passi vasca
+        'power_values': {}, # NUOVA sezione per i valori di potenza
         'margins': {
             'faster': '0:03',
             'slower': '0:03',
             'faster_spd': '2.0',  # Margini per velocità in km/h
             'slower_spd': '2.0',
+            'power_up': 10,       # NUOVO - Margine superiore per potenza in Watt
+            'power_down': 10,     # NUOVO - Margine inferiore per potenza in Watt
             'hr_up': 5,
             'hr_down': 5
         },
@@ -532,9 +535,9 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
             preferred_days_value = str(preferred_days_rows.iloc[0, 1]).strip()
             plan['config']['preferred_days'] = preferred_days_value
     
-    # NUOVA IMPLEMENTAZIONE: Utilizzare il parser migliorato per estrarre ritmi, velocità e passi vasca
+    # NUOVA IMPLEMENTAZIONE: Utilizzare il parser migliorato per estrarre ritmi, velocità, potenza e passi vasca
     if 'Paces' in xls.sheet_names:
-        paces, speeds, swim_paces = extract_paces_and_speeds_from_excel(excel_file)
+        paces, speeds, swim_paces, power_values = extract_paces_and_speeds_from_excel(excel_file)
         
         # Aggiorna il piano con i valori estratti
         if paces:
@@ -543,6 +546,8 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
             plan['config']['speeds'] = speeds
         if swim_paces:
             plan['config']['swim_paces'] = swim_paces
+        if power_values:
+            plan['config']['power_values'] = power_values
     
     # Estrai le frequenze cardiache
     if 'HeartRates' in xls.sheet_names:
@@ -640,14 +645,14 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
 
 def extract_paces_and_speeds_from_excel(excel_file):
     """
-    Estrae ritmi per la corsa, velocità per il ciclismo e passi vasca per il nuoto
+    Estrae ritmi per la corsa, velocità per il ciclismo, zone di potenza FTP e passi vasca per il nuoto
     dal foglio Paces unificato, usando openpyxl per accedere alle celle direttamente.
     
     Args:
         excel_file: Percorso del file Excel
         
     Returns:
-        Tuple (paces, speeds, swim_paces) con i dizionari contenenti i valori estratti
+        Tuple (paces, speeds, swim_paces, power_values) con i dizionari contenenti i valori estratti
     """
     try:
         import openpyxl
@@ -658,7 +663,7 @@ def extract_paces_and_speeds_from_excel(excel_file):
         # Verifica se il foglio Paces esiste
         if 'Paces' not in wb.sheetnames:
             print("Foglio Paces non trovato!")
-            return {}, {}, {}
+            return {}, {}, {}, {}
         
         # Ottieni il foglio
         sheet = wb['Paces']
@@ -667,9 +672,10 @@ def extract_paces_and_speeds_from_excel(excel_file):
         paces = {}
         speeds = {}
         swim_paces = {}
+        power_values = {}
         
         # Inizializza lo stato del parser
-        current_section = None  # 'running', 'cycling' o 'swimming'
+        current_section = None  # 'running', 'cycling', 'power', o 'swimming'
         
         # Processa riga per riga
         for row_idx in range(1, sheet.max_row + 1):
@@ -690,6 +696,10 @@ def extract_paces_and_speeds_from_excel(excel_file):
             elif col0_str and "VELOCITÀ PER IL CICLISMO" in col0_str:
                 current_section = 'cycling'
                 print(f"Trovata sezione CYCLING a riga {row_idx}")
+                continue
+            elif col0_str and "POTENZA PER IL CICLISMO" in col0_str:
+                current_section = 'power'
+                print(f"Trovata sezione POWER a riga {row_idx}")
                 continue
             elif col0_str and "PASSI VASCA PER IL NUOTO" in col0_str:
                 current_section = 'swimming'
@@ -719,21 +729,24 @@ def extract_paces_and_speeds_from_excel(excel_file):
                     paces[name] = value
                 elif current_section == 'cycling':
                     speeds[name] = value
+                elif current_section == 'power':
+                    power_values[name] = value
                 elif current_section == 'swimming':
                     swim_paces[name] = value
         
         # Stampa i valori estratti per debug
         print(f"Ritmi estratti: {paces}")
         print(f"Velocità estratte: {speeds}")
+        print(f"Valori potenza estratti: {power_values}")
         print(f"Passi vasca estratti: {swim_paces}")
         
-        return paces, speeds, swim_paces
+        return paces, speeds, swim_paces, power_values
     
     except Exception as e:
         import traceback
-        print(f"Errore nell'estrazione dei ritmi, velocità e passi vasca: {str(e)}")
+        print(f"Errore nell'estrazione dei ritmi, velocità, potenza e passi vasca: {str(e)}")
         traceback.print_exc()
-        return {}, {}, {}
+        return {}, {}, {}, {}
 
 def create_unified_examples_sheet(workbook):
     """
@@ -863,29 +876,29 @@ def create_unified_examples_sheet(workbook):
     
     # Esempi per il ciclismo
     cycling_examples = [
-        # Distanza
-        ('Distanza', 'Esempio di allenamento basato su distanza', 
-         "warmup: 5km @hr Z1_HR\ninterval: 20km @spd Z3\ncooldown: 3km @hr Z1_HR"),
+        # Potenza - Zone
+        ('Potenza (Zone)', 'Allenamento basato su zone di potenza', 
+         "warmup: 15min @hr Z1_HR\ninterval: 40min @pwr Z3\ncooldown: 10min @hr Z1_HR"),
         
-        # Tempo
-        ('Tempo', 'Esempio di allenamento basato su tempo', 
-         "warmup: 15min @hr Z1_HR\ninterval: 40min @spd Z2\ncooldown: 5min @hr Z1_HR"),
+        # Potenza - Percentuale FTP
+        ('Potenza (% FTP)', 'Allenamento basato su percentuali FTP', 
+         "warmup: 15min @hr Z1_HR\ninterval: 20min @pwr 90%\ncooldown: 10min @hr Z1_HR"),
         
-        # Ripetute semplici
-        ('Ripetute semplici', 'Esempio di allenamento con ripetute', 
-         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 2min @spd Z4\n  recovery: 2min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        # Potenza - Sweet Spot
+        ('Sweet Spot', 'Allenamento Sweet Spot (88-94% FTP)', 
+         "warmup: 15min @hr Z1_HR\nrepeat 3:\n  interval: 12min @pwr sweet_spot\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
         
-        # Con descrizioni
-        ('Con descrizioni', 'Esempio con descrizioni per ogni passo', 
-         "warmup: 15min @hr Z1_HR -- Inizia lentamente\ninterval: 30min @spd Z3 -- Mantieni ritmo costante\ncooldown: 10min @hr Z1_HR -- Rallenta gradualmente"),
+        # Potenza - Ripetute
+        ('Ripetute potenza', 'Ripetute ad alta intensità', 
+         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr Z5\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
         
-        # Pulsante lap
-        ('Pulsante lap', 'Esempio con pulsante lap', 
-         "warmup: 15min @hr Z1_HR\nrest: lap-button @hr Z1_HR -- Premi lap quando sei pronto\ninterval: 20km @spd Z3\ncooldown: 5min @hr Z1_HR"),
+        # Potenza - VO2max
+        ('VO2max', 'Allenamento VO2max', 
+         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr 110-120%\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
         
-        # Zone personalizzate
-        ('Zone personalizzate', 'Esempio con zone personalizzate', 
-         "warmup: 15min @hr Z1_HR\ninterval: 30min @spd 28.0\ninterval: 20min @spd threshold\ncooldown: 10min @hr Z1_HR")
+        # Potenza - Neuromuscolare
+        ('Neuromuscolare', 'Allenamento potenza neuromuscolare', 
+         "warmup: 15min @hr Z1_HR\nrepeat 10:\n  interval: 30sec @pwr Z6\n  recovery: 4min30sec @hr Z1_HR\ncooldown: 10min @hr Z1_HR")
     ]
     
     # Aggiungi esempi per il ciclismo
@@ -977,9 +990,9 @@ def create_unified_examples_sheet(workbook):
         "Tipi di passo: warmup, interval, recovery, cooldown, rest, repeat, other",
         "Durata: tempo (s, min, h) o distanza (m, km)",
         "Per la corsa: usa @ per il ritmo (es. @Z2) e @hr per la frequenza cardiaca (es. @hr Z2_HR)",
-        "Per il ciclismo: usa @spd per la velocità (es. @spd Z3) e @hr per la frequenza cardiaca (es. @hr Z1_HR)",
-        "Per il nuoto: usa @ per il passo vasca (es. @Z2) e @hr per la frequenza cardiaca (es. @hr Z2_HR)",
-        "Zone ritmo/velocità/passo vasca: Z1-Z5 o qualsiasi zona definita nei fogli Paces",
+        "Per il ciclismo: usa @pwr per la potenza (es. @pwr Z3 o @pwr 90%), @spd per la velocità (es. @spd Z3) e @hr per FC (es. @hr Z1_HR)",
+        "Zone ritmo: Z1-Z5 o qualsiasi zona definita nella sezione Ritmi",
+        "Zone potenza: Z1-Z6, percentuali FTP (es. 90%) o zone come sweet_spot, threshold",
         "Zone freq. cardiaca: Z1_HR-Z5_HR o qualsiasi zona definita nel foglio HeartRates",
         "Repeat: repeat N: seguito da step indentati con 2 spazi",
         "Descrizioni opzionali: aggiungi -- seguito dalla descrizione alla fine del passo"
@@ -993,6 +1006,7 @@ def create_unified_examples_sheet(workbook):
         row += 1
     
     return examples_sheet
+
 
 def update_workouts_sheet(sheet, yaml_data):
     """
@@ -1132,7 +1146,7 @@ def format_steps_for_excel(steps, sport_type="running"):
     
     Args:
         steps: Lista di passi dell'allenamento
-        sport_type: Tipo di sport ('running' o 'cycling')
+        sport_type: Tipo di sport ('running', 'cycling' o 'swimming')
         
     Returns:
         Testo formattato dei passi
@@ -1156,13 +1170,17 @@ def format_steps_for_excel(steps, sport_type="running"):
                     
                     # Gestisci i diversi formati in base al tipo di sport
                     if sport_type == "cycling":
-                        # Per il ciclismo, assicurati che @ diventi @spd nei passi che hanno zona di ritmo
-                        if '@' in substep_detail and '@spd' not in substep_detail and '@hr' not in substep_detail:
-                            substep_detail = substep_detail.replace('@', '@spd ')
-                    else:  # running
-                        # Per la corsa, assicurati che @spd diventi @ nei passi che hanno zona di velocità
+                        # Per il ciclismo, gestisci @pwr, @spd e @hr
+                        if '@' in substep_detail:
+                            if '@pwr' not in substep_detail and '@spd' not in substep_detail and '@hr' not in substep_detail:
+                                # Se c'è @ ma non è specificato il tipo, per ciclismo usa @pwr
+                                substep_detail = substep_detail.replace('@', '@pwr ')
+                    else:  # running o swimming
+                        # Per la corsa e il nuoto, converte eventuali @spd e @pwr in @
                         if '@spd' in substep_detail:
-                            substep_detail = substep_detail.replace('@spd', '@')
+                            substep_detail = substep_detail.replace('@spd ', '@')
+                        if '@pwr' in substep_detail:
+                            substep_detail = substep_detail.replace('@pwr ', '@')
                     
                     # Usa l'indentazione con due spazi per i substep
                     formatted_steps.append(f"  {substep_type}: {substep_detail}")
@@ -1174,13 +1192,17 @@ def format_steps_for_excel(steps, sport_type="running"):
             
             # Gestisci i diversi formati in base al tipo di sport
             if sport_type == "cycling":
-                # Per il ciclismo, assicurati che @ diventi @spd nei passi che hanno zona di ritmo
-                if '@' in step_detail and '@spd' not in step_detail and '@hr' not in step_detail:
-                    step_detail = step_detail.replace('@', '@spd ')
-            else:  # running
-                # Per la corsa, assicurati che @spd diventi @ nei passi che hanno zona di velocità
+                # Per il ciclismo, gestisci @pwr, @spd e @hr
+                if '@' in step_detail:
+                    if '@pwr' not in step_detail and '@spd' not in step_detail and '@hr' not in step_detail:
+                        # Se c'è @ ma non è specificato il tipo, per ciclismo usa @pwr
+                        step_detail = step_detail.replace('@', '@pwr ')
+            else:  # running o swimming
+                # Per la corsa e il nuoto, converte eventuali @spd e @pwr in @
                 if '@spd' in step_detail:
-                    step_detail = step_detail.replace('@spd', '@')
+                    step_detail = step_detail.replace('@spd ', '@')
+                if '@pwr' in step_detail:
+                    step_detail = step_detail.replace('@pwr ', '@')
             
             formatted_steps.append(f"{step_type}: {step_detail}")
     
@@ -1677,7 +1699,6 @@ def auto_adjust_column_widths(worksheet):
             worksheet.column_dimensions[column].width = min(adjusted_width, 60)  # Limit to 60 to avoid too wide columns
 
 
-
 def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="running"):
     """
     Create a sample Excel file with the expected structure for the training plan.
@@ -1833,12 +1854,12 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
         # Esempi per il ciclismo
         workouts = [
             # Week, Session, Sport, Description, Steps
-            (1, 1, "cycling", 'Easy ride', 'warmup: 15min @hr Z1_HR\ninterval: 45min @spd Z2\ncooldown: 10min @hr Z1_HR'),
-            (1, 2, "cycling", 'Short intervals', 'warmup: 20min @hr Z1_HR\nrepeat 5:\n  interval: 2min @spd Z5\n  recovery: 3min @hr Z1_HR\ncooldown: 15min @hr Z1_HR'),
-            (1, 3, "cycling", 'Long endurance ride', 'warmup: 15min @hr Z1_HR\ninterval: 90min @spd Z2\ncooldown: 10min @hr Z1_HR'),
+            (1, 1, "cycling", 'Easy ride', 'warmup: 15min @hr Z1_HR\ninterval: 45min @pwr Z2\ncooldown: 10min @hr Z1_HR'),
+            (1, 2, "cycling", 'Sweet Spot', 'warmup: 20min @hr Z1_HR\nrepeat 3:\n  interval: 12min @pwr sweet_spot\n  recovery: 3min @hr Z1_HR\ncooldown: 15min @hr Z1_HR'),
+            (1, 3, "cycling", 'Endurance ride', 'warmup: 15min @hr Z1_HR\ninterval: 90min @pwr Z2\ncooldown: 10min @hr Z1_HR'),
             (2, 1, "cycling", 'Recovery ride', 'interval: 45min @hr Z1_HR'),
-            (2, 2, "cycling", 'Threshold ride', 'warmup: 20min @hr Z1_HR\ninterval: 30min @spd Z4\ncooldown: 15min @hr Z1_HR'),
-            (2, 3, "cycling", 'Progressive ride', 'warmup: 15min @hr Z1_HR\ninterval: 45min @spd Z2\ninterval: 30min @spd Z3\ncooldown: 15min @hr Z1_HR')
+            (2, 2, "cycling", 'Threshold', 'warmup: 20min @hr Z1_HR\ninterval: 3min @pwr 95%\ninterval: 2min @hr Z1_HR\nrepeat 3:\n  interval: 8min @pwr threshold\n  recovery: 4min @hr Z1_HR\ncooldown: 15min @hr Z1_HR'),
+            (2, 3, "cycling", 'VO2max intervals', 'warmup: 15min @hr Z1_HR\nrepeat 6:\n  interval: 3min @pwr 115%\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR')
         ]
     else:  # swimming
         # Esempi per il nuoto
@@ -1944,10 +1965,11 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     return output_file
 
 
+
 def create_unified_paces_sheet(workbook, sport_type="running"):
     """
     Crea un foglio Paces unificato che contiene sia i ritmi per la corsa,
-    le velocità per il ciclismo e i passi vasca per il nuoto.
+    le velocità per il ciclismo, le zone di potenza FTP e i passi vasca per il nuoto.
     
     Args:
         workbook: Workbook di openpyxl
@@ -1980,6 +2002,7 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     header_fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
     running_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")  # Verde chiaro
     cycling_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")  # Azzurro chiaro
+    power_fill = PatternFill(start_color="D8E4BC", end_color="D8E4BC", fill_type="solid")    # Verde oliva
     swimming_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")  # Arancione chiaro
     active_fill = running_fill
     if sport_type == "cycling":
@@ -2048,7 +2071,7 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     # Aggiungi una riga vuota tra le sezioni
     row += 1
     
-    # Sezione Cycling
+    # Sezione Cycling - Velocità (obsoleta ma mantenuta per compatibilità)
     paces_sheet.merge_cells(f'A{row}:C{row}')
     paces_sheet[f'A{row}'] = 'VELOCITÀ PER IL CICLISMO (km/h)'
     paces_sheet[f'A{row}'].font = subheader_font
@@ -2089,7 +2112,50 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     # Aggiungi una riga vuota tra le sezioni
     row += 1
     
-    # Sezione Swimming (NUOVA)
+    # NUOVA Sezione - Potenza per il ciclismo
+    paces_sheet.merge_cells(f'A{row}:C{row}')
+    paces_sheet[f'A{row}'] = 'POTENZA PER IL CICLISMO (Watt)'
+    paces_sheet[f'A{row}'].font = subheader_font
+    paces_sheet[f'A{row}'].fill = power_fill
+    paces_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+    row += 1
+    
+    # Valori di potenza per il ciclismo
+    cycling_power = [
+        ('ftp', '250', 'Functional Threshold Power (W)'),
+        ('Z1', '125-175', 'Recupero attivo (55-70% FTP)'),
+        ('Z2', '175-215', 'Endurance (70-86% FTP)'),
+        ('Z3', '215-250', 'Tempo/Soglia (86-100% FTP)'),
+        ('Z4', '250-300', 'VO2max (100-120% FTP)'),
+        ('Z5', '300-375', 'Capacità anaerobica (120-150% FTP)'),
+        ('Z6', '375+', 'Potenza neuromuscolare (>150% FTP)'),
+        ('recovery', '<125', 'Recupero (<55% FTP)'),
+        ('threshold', '235-265', 'Soglia (94-106% FTP)'),
+        ('sweet_spot', '220-235', 'Sweet Spot (88-94% FTP)'),
+    ]
+    
+    # Aggiungi valori di potenza per il ciclismo
+    for name, value, note in cycling_power:
+        paces_sheet[f'A{row}'] = name
+        paces_sheet[f'B{row}'] = value
+        paces_sheet[f'C{row}'] = note
+        
+        # Applica bordi e formattazione a tutte le celle della riga
+        for col in ['A', 'B', 'C']:
+            cell = paces_sheet[f'{col}{row}']
+            cell.border = thin_border
+            cell.alignment = wrapped_alignment
+            
+            # Evidenzia le righe in base al tipo di sport attivo
+            if sport_type == "cycling":
+                cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
+        
+        row += 1
+    
+    # Aggiungi una riga vuota tra le sezioni
+    row += 1
+    
+    # Sezione Swimming
     paces_sheet.merge_cells(f'A{row}:C{row}')
     paces_sheet[f'A{row}'] = 'PASSI VASCA PER IL NUOTO (min/100m)'
     paces_sheet[f'A{row}'].font = subheader_font
@@ -2133,7 +2199,7 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     if sport_type == "running":
         paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è CORSA. Le zone Z1-Z5 si riferiscono ai ritmi in min/km.'
     elif sport_type == "cycling":
-        paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è CICLISMO. Le zone Z1-Z5 si riferiscono alle velocità in km/h.'
+        paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è CICLISMO. Per la potenza, usa @pwr prima della zona (es. @pwr Z3).'
     elif sport_type == "swimming":
         paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è NUOTO. Le zone Z1-Z5 si riferiscono ai passi vasca in min/100m.'
     paces_sheet[f'A{row}'].font = Font(italic=True)

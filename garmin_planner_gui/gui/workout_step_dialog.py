@@ -273,6 +273,8 @@ class StepDialog(tk.Toplevel):
             ttk.Label(self.duration_values_frame, 
                     text="Pressione del pulsante Lap richiesta per passare al passo successivo").pack(side=tk.LEFT)
     
+
+
     def update_target_ui(self):
         """Aggiorna l'interfaccia per il target in base al tipo selezionato"""
         # Pulisci il frame
@@ -281,8 +283,13 @@ class StepDialog(tk.Toplevel):
         
         target_type = self.target_type_var.get()
         
-        if target_type == "pace":
-            # Target di ritmo/velocità
+        if target_type == "none":
+            # Nessun target, mostra solo una label
+            ttk.Label(self.target_values_frame, 
+                    text="Nessun target specificato per questo passo").pack(side=tk.LEFT)
+        
+        elif target_type == "pace":
+            # Target di ritmo/velocità/potenza
             if self.sport_type == "running":
                 # Ritmo per corsa
                 ttk.Label(self.target_values_frame, text="Ritmo:").pack(side=tk.LEFT, padx=(0, 5))
@@ -303,23 +310,28 @@ class StepDialog(tk.Toplevel):
                 ttk.Label(self.target_values_frame, text="@").pack(side=tk.LEFT, padx=(5, 0))
             
             elif self.sport_type == "cycling":
-                # Velocità per ciclismo
-                ttk.Label(self.target_values_frame, text="Velocità:").pack(side=tk.LEFT, padx=(0, 5))
+                # Potenza per ciclismo (invece di velocità)
+                ttk.Label(self.target_values_frame, text="Potenza:").pack(side=tk.LEFT, padx=(0, 5))
                 
-                # Lista di zone di velocità
-                speeds = self.workout_config.get('speeds', {})
-                speed_values = list(speeds.keys())
+                # Lista di zone di potenza
+                power_values = self.workout_config.get('power_values', {})
+                power_zones = [k for k in power_values.keys() if k != 'ftp']
                 
                 # Se non ci sono zone definite, usa alcune di default
-                if not speed_values:
-                    speed_values = ["Z1", "Z2", "Z3", "Z4", "Z5", "recovery", "threshold", "ftp"]
+                if not power_zones:
+                    power_zones = ["Z1", "Z2", "Z3", "Z4", "Z5", "Z6", "recovery", "threshold", "sweet_spot"]
                 
-                speed_combo = ttk.Combobox(self.target_values_frame, textvariable=self.pace_var, 
-                                         values=speed_values, width=15)
-                speed_combo.pack(side=tk.LEFT)
+                power_combo = ttk.Combobox(self.target_values_frame, textvariable=self.pace_var, 
+                                         values=power_zones, width=15)
+                power_combo.pack(side=tk.LEFT)
                 
                 # Mostra il prefisso
-                ttk.Label(self.target_values_frame, text="@spd").pack(side=tk.LEFT, padx=(5, 0))
+                ttk.Label(self.target_values_frame, text="@pwr").pack(side=tk.LEFT, padx=(5, 0))
+                
+                # Pulsante di aiuto per la potenza
+                help_button = ttk.Button(self.target_values_frame, text="?", width=2,
+                                       command=self.show_power_help)
+                help_button.pack(side=tk.LEFT, padx=(10, 0))
             
             elif self.sport_type == "swimming":
                 # Passo vasca per nuoto
@@ -348,16 +360,69 @@ class StepDialog(tk.Toplevel):
             heart_rates = self.workout_config.get('heart_rates', {})
             hr_values = [k for k in heart_rates.keys() if k.endswith("_HR") or k in ["Z1_HR", "Z2_HR", "Z3_HR", "Z4_HR", "Z5_HR"]]
             
+            # Aggiungi opzioni per percentuali
+            hr_values.extend(["60-70%", "70-80%", "80-90%", "90-100%"])
+            
             # Se non ci sono zone definite, usa alcune di default
             if not hr_values:
-                hr_values = ["Z1_HR", "Z2_HR", "Z3_HR", "Z4_HR", "Z5_HR"]
+                hr_values = ["Z1_HR", "Z2_HR", "Z3_HR", "Z4_HR", "Z5_HR", "60-70%", "70-80%", "80-90%", "90-100%"]
             
             hr_combo = ttk.Combobox(self.target_values_frame, textvariable=self.hr_var, 
                                    values=hr_values, width=15)
             hr_combo.pack(side=tk.LEFT)
             
+            # Campo per input custom
+            ttk.Label(self.target_values_frame, text="o personalizzato:").pack(side=tk.LEFT, padx=(10, 5))
+            
+            custom_hr = ttk.Entry(self.target_values_frame, width=10)
+            custom_hr.pack(side=tk.LEFT)
+            
+            # Pulsante per applicare il valore personalizzato
+            ttk.Button(self.target_values_frame, text="Applica", 
+                       command=lambda: self.hr_var.set(custom_hr.get())).pack(side=tk.LEFT, padx=(5, 0))
+            
             # Mostra il prefisso
             ttk.Label(self.target_values_frame, text="@hr").pack(side=tk.LEFT, padx=(5, 0))
+            
+            # Pulsante di aiuto
+            help_button = ttk.Button(self.target_values_frame, text="?", width=2,
+                                   command=self.show_hr_help)
+            help_button.pack(side=tk.LEFT, padx=(10, 0))
+
+    def show_power_help(self):
+        """Mostra informazioni sull'uso delle percentuali nelle zone di potenza"""
+        help_text = """
+    Impostazione delle zone di potenza:
+
+    1. Valori assoluti:
+       - Singolo valore: 250 (Watt)
+       - Intervallo: 230-270 (Watt)
+
+    2. Valori percentuali (basati sull'FTP):
+       - Singola percentuale: 85% 
+       - Intervallo percentuale: 75-85%
+       
+    La potenza FTP (Functional Threshold Power) è configurabile 
+    nelle impostazioni di configurazione degli allenamenti.
+
+    Esempi:
+    - 85%      = 85% dell'FTP
+    - 75-85%   = dal 75% all'85% dell'FTP
+    - Z3       = Zona 3 di potenza (configurata)
+    - 250      = 250 Watt
+    - 230-270  = da 230 a 270 Watt
+    """
+        
+        help_dialog = tk.Toplevel(self)
+        help_dialog.title("Aiuto zone di potenza")
+        help_dialog.geometry("400x300")
+        help_dialog.transient(self)
+        help_dialog.grab_set()
+        
+        ttk.Label(help_dialog, text=help_text, justify=tk.LEFT, wraplength=380).pack(padx=10, pady=10)
+        
+        ttk.Button(help_dialog, text="Chiudi", command=help_dialog.destroy).pack(pady=10)
+
     
     def populate_from_detail(self, step_type, step_detail):
         """Popola i campi del dialog con i dettagli del passo esistente"""

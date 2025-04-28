@@ -6,7 +6,7 @@ Dialog per la configurazione dei parametri degli allenamenti
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog 
 import copy
 import re
 from .styles import COLORS
@@ -22,6 +22,9 @@ class WorkoutConfigDialog(tk.Toplevel):
         # Copia di sicurezza della configurazione originale
         self.orig_config = config if config else {}
         self.config = copy.deepcopy(self.orig_config)
+        
+        # Aggiungi questa riga per correggere l'errore
+        self.workout_config = self.config  # Alias per mantenere compatibilità
         
         # Configurazione del dialog
         self.title("Configurazione allenamenti")
@@ -63,7 +66,7 @@ class WorkoutConfigDialog(tk.Toplevel):
         
         # Scheda velocità (per il ciclismo)
         speeds_frame = ttk.Frame(notebook)
-        notebook.add(speeds_frame, text="Velocità (Ciclismo)")
+        notebook.add(speeds_frame, text="Potenza (Ciclismo)")
         self.create_speeds_tab(speeds_frame)
         
         # Scheda passi vasca (per il nuoto)
@@ -133,18 +136,18 @@ class WorkoutConfigDialog(tk.Toplevel):
         ttk.Entry(margins_frame, textvariable=self.slower_var, width=10).grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
         ttk.Label(margins_frame, text="(mm:ss)").grid(row=1, column=2, padx=5, pady=5, sticky=tk.W)
         
-        # Margini per velocità
-        ttk.Label(margins_frame, text="Margine più veloce (velocità):").grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        # Margini per potenza
+        ttk.Label(margins_frame, text="Margine superiore (potenza):").grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
         
-        self.faster_spd_var = tk.StringVar(value=margins.get('faster_spd', '2.0'))
-        ttk.Entry(margins_frame, textvariable=self.faster_spd_var, width=10).grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
-        ttk.Label(margins_frame, text="(km/h)").grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+        self.power_up_var = tk.StringVar(value=margins.get('power_up', '10'))
+        ttk.Entry(margins_frame, textvariable=self.power_up_var, width=10).grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(margins_frame, text="(Watt)").grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
         
-        ttk.Label(margins_frame, text="Margine più lento (velocità):").grid(row=1, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(margins_frame, text="Margine inferiore (potenza):").grid(row=1, column=3, padx=5, pady=5, sticky=tk.W)
         
-        self.slower_spd_var = tk.StringVar(value=margins.get('slower_spd', '2.0'))
-        ttk.Entry(margins_frame, textvariable=self.slower_spd_var, width=10).grid(row=1, column=4, padx=5, pady=5, sticky=tk.W)
-        ttk.Label(margins_frame, text="(km/h)").grid(row=1, column=5, padx=5, pady=5, sticky=tk.W)
+        self.power_down_var = tk.StringVar(value=margins.get('power_down', '10'))
+        ttk.Entry(margins_frame, textvariable=self.power_down_var, width=10).grid(row=1, column=4, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(margins_frame, text="(Watt)").grid(row=1, column=5, padx=5, pady=5, sticky=tk.W)
         
         # Margini per frequenza cardiaca
         ttk.Label(margins_frame, text="Tolleranza superiore (FC):").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
@@ -163,7 +166,7 @@ class WorkoutConfigDialog(tk.Toplevel):
         info_text = (
             "Le impostazioni generali controllano il comportamento predefinito dell'applicazione. "
             "Il prefisso nome viene aggiunto automaticamente a tutti gli allenamenti creati. "
-            "I margini di tolleranza definiscono quanto può variare un ritmo/velocità/FC "
+            "I margini di tolleranza definiscono quanto può variare un ritmo/potenza/FC "
             "rispetto al valore target nelle fasi di allenamento."
         )
         
@@ -226,59 +229,245 @@ class WorkoutConfigDialog(tk.Toplevel):
         self.update_paces_tree()
     
     def create_speeds_tab(self, parent):
-        """Crea la scheda per le velocità di ciclismo"""
+        """Crea la scheda per la potenza di ciclismo"""
         # Frame superiore per la spiegazione
         info_frame = ttk.Frame(parent, padding=10)
         info_frame.pack(fill=tk.X)
         
         info_text = (
-            "Definisci le velocità di ciclismo utilizzando il formato km/h. "
-            "Puoi utilizzare sia valori singoli (es. '25.0') che intervalli (es. '23.0-27.0')."
+            "Definisci le zone di potenza per il ciclismo utilizzando Watt o percentuali dell'FTP. "
+            "Puoi utilizzare sia valori singoli (es. '250') che intervalli (es. '230-270') o "
+            "percentuali dell'FTP (es. '85%' o '75-85%')."
         )
         
         info_label = ttk.Label(info_frame, text=info_text, wraplength=600)
         info_label.pack(fill=tk.X)
         
-        # Frame per la lista con le velocità
+        # Aggiungi una sezione per l'FTP
+        ftp_frame = ttk.Frame(parent, padding=10)
+        ftp_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(ftp_frame, text="FTP (Functional Threshold Power):").grid(row=0, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        self.ftp_var = tk.StringVar(value=str(self.config.get('power_values', {}).get('ftp', 250)))
+        ftp_entry = ttk.Entry(ftp_frame, textvariable=self.ftp_var, width=5)
+        ftp_entry.grid(row=0, column=1, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        ttk.Label(ftp_frame, text="Watt").grid(row=0, column=2, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        # Aggiungi una spiegazione
+        ttk.Label(ftp_frame, text="Utilizzata per calcolare zone in percentuale", 
+                font=("Arial", 8)).grid(row=0, column=3, sticky=tk.W, padx=(10, 0), pady=5)
+        
+        # Pulsante per stimare l'FTP
+        def estimate_ftp():
+            """Stima l'FTP in base al massimo di 20min"""
+            try:
+                max_20min = simpledialog.askinteger("Stima FTP", 
+                                                 "Inserisci la potenza massima mantenuta per 20 minuti:", 
+                                                 parent=self, minvalue=50, maxvalue=500)
+                if max_20min:
+                    # Formula comune: 95% della potenza di 20min
+                    estimated_ftp = int(max_20min * 0.95)
+                    self.ftp_var.set(str(estimated_ftp))
+                    messagebox.showinfo("FTP stimata", 
+                                       f"FTP stimata in base alla potenza di 20min ({max_20min} W): {estimated_ftp} W", 
+                                       parent=self)
+            except Exception as e:
+                messagebox.showerror("Errore", f"Errore nella stima: {str(e)}", parent=self)
+                
+        ttk.Button(ftp_frame, text="Stima dalla potenza di 20min", 
+                  command=estimate_ftp).grid(row=0, column=4, sticky=tk.W, padx=(10, 0), pady=5)
+        
+        # Frame per la lista con le zone di potenza
         list_frame = ttk.Frame(parent, padding=10)
         list_frame.pack(fill=tk.BOTH, expand=True)
         
         # Crea la treeview
         columns = ("name", "value", "description")
-        self.speeds_tree = ttk.Treeview(list_frame, columns=columns, show="headings")
+        self.power_tree = ttk.Treeview(list_frame, columns=columns, show="headings")
         
         # Intestazioni
-        self.speeds_tree.heading("name", text="Nome")
-        self.speeds_tree.heading("value", text="Valore")
-        self.speeds_tree.heading("description", text="Descrizione")
+        self.power_tree.heading("name", text="Nome")
+        self.power_tree.heading("value", text="Valore")
+        self.power_tree.heading("description", text="Descrizione")
         
         # Larghezze colonne
-        self.speeds_tree.column("name", width=150)
-        self.speeds_tree.column("value", width=150)
-        self.speeds_tree.column("description", width=300)
+        self.power_tree.column("name", width=150)
+        self.power_tree.column("value", width=150)
+        self.power_tree.column("description", width=300)
         
         # Scrollbar
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.speeds_tree.yview)
-        self.speeds_tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.power_tree.yview)
+        self.power_tree.configure(yscrollcommand=scrollbar.set)
         
         # Pack
-        self.speeds_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.power_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Double-click per modificare
-        self.speeds_tree.bind("<Double-1>", lambda e: self.edit_speed())
+        self.power_tree.bind("<Double-1>", lambda e: self.edit_power())
         
         # Pulsanti
         button_frame = ttk.Frame(parent, padding=10)
         button_frame.pack(fill=tk.X)
         
-        ttk.Button(button_frame, text="Aggiungi", command=self.add_speed).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(button_frame, text="Modifica", command=self.edit_speed).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Elimina", command=self.delete_speed).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Aggiungi", command=self.add_power).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="Modifica", command=self.edit_power).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Elimina", command=self.delete_power).pack(side=tk.LEFT, padx=5)
+        
+        # Pulsante per aggiungere zone predefinite
+        ttk.Button(button_frame, text="Aggiungi zone predefinite", 
+                  command=self.add_default_power_zones).pack(side=tk.RIGHT)
         
         # Popola la lista
-        self.update_speeds_tree()
+        self.update_power_tree()
     
+
+    def update_power_tree(self):
+        """Aggiorna la lista delle zone di potenza"""
+        # Pulisci la lista
+        for item in self.power_tree.get_children():
+            self.power_tree.delete(item)
+        
+        # Descrizioni predefinite per le zone
+        descriptions = {
+            "Z1": "Recupero attivo (55-65% FTP)",
+            "Z2": "Endurance (66-75% FTP)",
+            "Z3": "Tempo/Soglia (76-90% FTP)",
+            "Z4": "VO2max (91-105% FTP)",
+            "Z5": "Capacità anaerobica (106-120% FTP)",
+            "Z6": "Potenza neuromuscolare (>121% FTP)",
+            "recovery": "Recupero (<55% FTP)",
+            "threshold": "Soglia (~100% FTP)",
+            "sweet_spot": "Sweet Spot (88-94% FTP)",
+        }
+        
+        # Aggiungi le zone di potenza
+        power_values = self.config.get('power_values', {})
+        for name, value in power_values.items():
+            if name != 'ftp':  # Escludiamo l'FTP dalla lista delle zone
+                description = descriptions.get(name, "")
+                self.power_tree.insert("", "end", values=(name, value, description))
+
+    def add_power(self):
+        """Aggiunge una nuova zona di potenza"""
+        dialog = ConfigItemDialog(self, "Aggiungi zona di potenza", "power")
+        
+        if dialog.result:
+            name, value, description = dialog.result
+            
+            # Aggiungi alla configurazione
+            if not 'power_values' in self.config:
+                self.config['power_values'] = {'ftp': 250}  # FTP di default
+            
+            self.config['power_values'][name] = value
+            
+            # Aggiorna la lista
+            self.update_power_tree()
+
+    def edit_power(self):
+        """Modifica una zona di potenza esistente"""
+        selection = self.power_tree.selection()
+        if not selection:
+            messagebox.showwarning("Nessuna selezione", "Seleziona una zona di potenza da modificare", parent=self)
+            return
+        
+        # Ottieni i valori attuali
+        name, value, description = self.power_tree.item(selection[0], "values")
+        
+        # Apri il dialog per la modifica
+        dialog = ConfigItemDialog(self, "Modifica zona di potenza", "power", name, value, description)
+        
+        if dialog.result:
+            new_name, new_value, new_description = dialog.result
+            
+            # Se è cambiato il nome, rimuovi il vecchio
+            if new_name != name:
+                del self.config['power_values'][name]
+            
+            # Aggiorna la configurazione
+            self.config['power_values'][new_name] = new_value
+            
+            # Aggiorna la lista
+            self.update_power_tree()
+
+    def delete_power(self):
+        """Elimina una zona di potenza"""
+        selection = self.power_tree.selection()
+        if not selection:
+            messagebox.showwarning("Nessuna selezione", "Seleziona una zona di potenza da eliminare", parent=self)
+            return
+        
+        # Ottieni il nome
+        name = self.power_tree.item(selection[0], "values")[0]
+        
+        # Chiedi conferma
+        if messagebox.askyesno("Conferma eliminazione", 
+                             f"Sei sicuro di voler eliminare la zona di potenza '{name}'?", 
+                             parent=self):
+            # Elimina dalla configurazione
+            if name in self.config.get('power_values', {}):
+                del self.config['power_values'][name]
+            
+            # Aggiorna la lista
+            self.update_power_tree()
+
+    def add_default_power_zones(self):
+        """Aggiunge zone di potenza predefinite basate sull'FTP"""
+        try:
+            # Ottieni l'FTP
+            ftp_str = self.ftp_var.get().strip()
+            if not ftp_str.isdigit():
+                messagebox.showerror("Errore", "L'FTP deve essere un numero intero", parent=self)
+                return
+                
+            ftp = int(ftp_str)
+            if ftp < 50 or ftp > 500:
+                if not messagebox.askyesno("Avviso", 
+                                         f"L'FTP ({ftp} W) sembra fuori dal range normale (50-500 W). Continuare?", 
+                                         parent=self):
+                    return
+            
+            # Zone predefinite come percentuali dell'FTP
+            default_zones = {
+                "Z1": (55, 65),      # Recupero attivo
+                "Z2": (66, 75),      # Endurance
+                "Z3": (76, 90),      # Tempo
+                "Z4": (91, 105),     # VO2max
+                "Z5": (106, 120),    # Capacità anaerobica
+                "Z6": (121, 150),    # Potenza neuromuscolare
+                "recovery": (30, 54),
+                "threshold": (95, 105),
+                "sweet_spot": (88, 94)
+            }
+            
+            # Calcola i valori di Watt per ogni zona
+            if not 'power_values' in self.config:
+                self.config['power_values'] = {}
+                
+            power_values = self.config['power_values']
+            
+            for zone, (low_pct, high_pct) in default_zones.items():
+                low_power = int((low_pct / 100) * ftp)
+                high_power = int((high_pct / 100) * ftp)
+                power_values[zone] = f"{low_power}-{high_power}"
+            
+            # Aggiorna l'FTP
+            power_values['ftp'] = ftp
+            
+            # Aggiorna la lista
+            self.update_power_tree()
+            
+            # Messaggio di conferma
+            messagebox.showinfo("Zone aggiunte", 
+                              f"Zone di potenza aggiunte in base all'FTP ({ftp} W)", 
+                              parent=self)
+                              
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore nell'aggiunta delle zone: {str(e)}", parent=self)
+
+
     def create_swim_tab(self, parent):
         """Crea la scheda per i passi vasca di nuoto"""
         # Frame superiore per la spiegazione
@@ -333,6 +522,7 @@ class WorkoutConfigDialog(tk.Toplevel):
         # Popola la lista
         self.update_swim_tree()
     
+
     def create_hr_tab(self, parent):
         """Crea la scheda per le frequenze cardiache"""
         # Frame superiore per la spiegazione
@@ -347,6 +537,41 @@ class WorkoutConfigDialog(tk.Toplevel):
         
         info_label = ttk.Label(info_frame, text=info_text, wraplength=600)
         info_label.pack(fill=tk.X)
+        
+        # Aggiungi una sezione per la frequenza cardiaca massima
+        max_hr_frame = ttk.Frame(parent, padding=10)
+        max_hr_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(max_hr_frame, text="Frequenza cardiaca massima:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        self.max_hr_var = tk.StringVar(value=str(self.workout_config.get('heart_rates', {}).get('max_hr', 180)))
+        max_hr_entry = ttk.Entry(max_hr_frame, textvariable=self.max_hr_var, width=5)
+        max_hr_entry.grid(row=0, column=1, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        ttk.Label(max_hr_frame, text="bpm").grid(row=0, column=2, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        # Aggiungi una spiegazione
+        ttk.Label(max_hr_frame, text="Utilizzata per calcolare zone in percentuale", 
+                font=("Arial", 8)).grid(row=0, column=3, sticky=tk.W, padx=(10, 0), pady=5)
+        
+        # Pulsante per stimare la FC massima
+        def estimate_max_hr():
+            """Stima la FC massima in base all'età"""
+            try:
+                age = simpledialog.askinteger("Stima FC max", "Inserisci la tua età:", 
+                                            parent=self, minvalue=10, maxvalue=100)
+                if age:
+                    # Formula comune: 220 - età
+                    estimated_max_hr = 220 - age
+                    self.max_hr_var.set(str(estimated_max_hr))
+                    messagebox.showinfo("FC Max stimata", 
+                                       f"FC Max stimata in base all'età ({age} anni): {estimated_max_hr} bpm", 
+                                       parent=self)
+            except Exception as e:
+                messagebox.showerror("Errore", f"Errore nella stima: {str(e)}", parent=self)
+                
+        ttk.Button(max_hr_frame, text="Stima in base all'età", 
+                  command=estimate_max_hr).grid(row=0, column=4, sticky=tk.W, padx=(10, 0), pady=5)
         
         # Frame per la lista con le frequenze cardiache
         list_frame = ttk.Frame(parent, padding=10)
@@ -379,14 +604,65 @@ class WorkoutConfigDialog(tk.Toplevel):
         
         # Pulsanti
         button_frame = ttk.Frame(parent, padding=10)
-        button_frame.pack(fill=tk.X)
+        button_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Button(button_frame, text="Aggiungi", command=self.add_hr).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(button_frame, text="Modifica", command=self.edit_hr).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Elimina", command=self.delete_hr).pack(side=tk.LEFT, padx=5)
         
+        # Pulsante per aggiungere zone predefinite
+        ttk.Button(button_frame, text="Aggiungi zone predefinite", 
+                  command=self.add_default_hr_zones).pack(side=tk.RIGHT)
+        
         # Popola la lista
         self.update_hr_tree()
+
+    def add_default_hr_zones(self):
+        """Aggiunge zone di frequenza cardiaca predefinite basate sulla FC massima"""
+        try:
+            # Ottieni la FC massima
+            max_hr_str = self.max_hr_var.get().strip()
+            if not max_hr_str.isdigit():
+                messagebox.showerror("Errore", "La FC massima deve essere un numero intero", parent=self)
+                return
+                
+            max_hr = int(max_hr_str)
+            if max_hr < 100 or max_hr > 250:
+                if not messagebox.askyesno("Avviso", 
+                                         f"La FC massima ({max_hr} bpm) sembra fuori dal range normale (100-250 bpm). Continuare?", 
+                                         parent=self):
+                    return
+            
+            # Zone predefinite come percentuali
+            default_zones = {
+                "Z1_HR": (50, 60),  # 50-60% della FC max
+                "Z2_HR": (60, 70),  # 60-70% della FC max
+                "Z3_HR": (70, 80),  # 70-80% della FC max
+                "Z4_HR": (80, 90),  # 80-90% della FC max
+                "Z5_HR": (90, 100)  # 90-100% della FC max
+            }
+            
+            # Calcola i valori di BPM per ogni zona
+            heart_rates = self.workout_config.get('heart_rates', {})
+            
+            for zone, (low_pct, high_pct) in default_zones.items():
+                low_hr = int((low_pct / 100) * max_hr)
+                high_hr = int((high_pct / 100) * max_hr)
+                heart_rates[zone] = f"{low_hr}-{high_hr}"
+            
+            # Aggiorna la FC massima
+            heart_rates['max_hr'] = max_hr
+            
+            # Aggiorna la lista
+            self.update_hr_tree()
+            
+            # Messaggio di conferma
+            messagebox.showinfo("Zone aggiunte", 
+                              f"Zone di frequenza cardiaca aggiunte in base alla FC massima ({max_hr} bpm)", 
+                              parent=self)
+                              
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore nell'aggiunta delle zone: {str(e)}", parent=self)
     
     def update_paces_tree(self):
         """Aggiorna la lista dei ritmi"""
@@ -766,16 +1042,16 @@ class WorkoutConfigDialog(tk.Toplevel):
                 messagebox.showerror("Errore", "Il margine più lento deve essere in formato mm:ss", parent=self)
                 return False
             
-            # Velocità
-            faster_spd = self.faster_spd_var.get().strip()
-            slower_spd = self.slower_spd_var.get().strip()
+            # Margini per potenza
+            power_up = self.power_up_var.get().strip()
+            power_down = self.power_down_var.get().strip()
             
-            # Verifica che siano numeri
+            # Verifica che siano numeri interi
             try:
-                float(faster_spd)
-                float(slower_spd)
+                int(power_up)
+                int(power_down)
             except ValueError:
-                messagebox.showerror("Errore", "I margini di velocità devono essere numeri", parent=self)
+                messagebox.showerror("Errore", "I margini di potenza devono essere numeri interi", parent=self)
                 return False
             
             # FC
@@ -788,6 +1064,37 @@ class WorkoutConfigDialog(tk.Toplevel):
                 int(hr_down)
             except ValueError:
                 messagebox.showerror("Errore", "I margini di frequenza cardiaca devono essere numeri interi", parent=self)
+                return False
+                
+            # Verifica che la FC massima sia un valore valido
+            max_hr = self.max_hr_var.get().strip()
+            try:
+                max_hr_value = int(max_hr)
+                if max_hr_value < 100 or max_hr_value > 250:
+                    if not messagebox.askyesno("Avviso", 
+                                             f"La FC massima ({max_hr_value} bpm) sembra fuori dal range normale (100-250 bpm). Continuare?", 
+                                             parent=self):
+                        return False
+            except ValueError:
+                messagebox.showerror("Errore", "La FC massima deve essere un numero intero", parent=self)
+                return False
+            
+            # Validazione FTP
+            try:
+                # Verifica che l'FTP sia un valore valido
+                ftp = self.ftp_var.get().strip()
+                try:
+                    ftp_value = int(ftp)
+                    if ftp_value < 50 or ftp_value > 500:
+                        if not messagebox.askyesno("Avviso", 
+                                                 f"L'FTP ({ftp_value} W) sembra fuori dal range normale (50-500 W). Continuare?", 
+                                                 parent=self):
+                            return False
+                except ValueError:
+                    messagebox.showerror("Errore", "L'FTP deve essere un numero intero", parent=self)
+                    return False
+            except Exception as e:
+                messagebox.showerror("Errore", f"Errore di validazione FTP: {str(e)}", parent=self)
                 return False
             
         except Exception as e:
@@ -816,17 +1123,32 @@ class WorkoutConfigDialog(tk.Toplevel):
         
         self.config['margins']['faster'] = self.faster_var.get()
         self.config['margins']['slower'] = self.slower_var.get()
-        self.config['margins']['faster_spd'] = self.faster_spd_var.get()
-        self.config['margins']['slower_spd'] = self.slower_spd_var.get()
+        
+        # Sostituisci i margini di velocità con quelli di potenza
+        self.config['margins']['power_up'] = self.power_up_var.get() 
+        self.config['margins']['power_down'] = self.power_down_var.get()
+        
         self.config['margins']['hr_up'] = int(self.hr_up_var.get())
         self.config['margins']['hr_down'] = int(self.hr_down_var.get())
+        
+        # Salva la FC massima
+        if not 'heart_rates' in self.config:
+            self.config['heart_rates'] = {}
+        
+        self.config['heart_rates']['max_hr'] = int(self.max_hr_var.get())
+        
+        # Salva l'FTP
+        if not 'power_values' in self.config:
+            self.config['power_values'] = {}
+        
+        self.config['power_values']['ftp'] = int(self.ftp_var.get())
         
         # Imposta il risultato
         self.result = self.config
         
         # Chiudi il dialog
         self.destroy()
-    
+        
     def on_cancel(self):
         """Gestisce il pulsante Annulla"""
         self.destroy()
@@ -1072,9 +1394,21 @@ class ConfigItemDialog(tk.Toplevel):
             # Formati validi: "150" o "140-160" o "70-80% max_hr"
             if not (re.match(r'^\d+$', value) or 
                    re.match(r'^\d+-\d+$', value) or 
-                   re.match(r'^\d+-\d+%\s+\w+$', value)):
+                   re.match(r'^\d+-\d+%\s+\w+$', value) or
+                   re.match(r'^\d+%$', value)):
                 messagebox.showerror("Errore", 
                                    "La FC deve essere un numero, un intervallo o una percentuale", 
+                                   parent=self)
+                return False
+        
+        elif self.item_type == "power":
+            # Formati validi: "250" o "230-270" o "75%" o "75-85%"
+            if not (re.match(r'^\d+$', value) or 
+                   re.match(r'^\d+-\d+$', value) or
+                   re.match(r'^\d+%$', value) or
+                   re.match(r'^\d+-\d+%$', value)):
+                messagebox.showerror("Errore", 
+                                   "La potenza deve essere un numero, un intervallo, o una percentuale", 
                                    parent=self)
                 return False
         
