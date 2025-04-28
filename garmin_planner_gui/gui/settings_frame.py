@@ -158,6 +158,11 @@ class SettingsFrame(ttk.Frame):
         font_size = self.font_size_var.get()
         window_size = self.window_size_var.get().strip()
         
+        # Ricorda i valori originali per controllare cosa è cambiato
+        original_theme = self.controller.config.get('ui_preferences', {}).get('theme', 'default')
+        original_font_size = self.controller.config.get('ui_preferences', {}).get('font_size', 'medium')
+        original_window_size = self.controller.config.get('ui_preferences', {}).get('window_size', '1024x768')
+        
         try:
             max_recents = int(self.max_recents_var.get().strip())
             if max_recents < 1:
@@ -207,10 +212,13 @@ class SettingsFrame(ttk.Frame):
             self.controller.config['recent_files'] = self.controller.config['recent_files'][:max_recents]
         
         # Applica le modifiche (alcune potrebbero richiedere un riavvio)
-        messagebox.showinfo("Impostazioni salvate", 
-                          "Le impostazioni sono state salvate.\n"
-                          "Alcune modifiche potrebbero richiedere il riavvio dell'applicazione.", 
-                          parent=self)
+        message = "Le impostazioni sono state salvate."
+        
+        # Verifica se sono state modificate impostazioni che richiedono un riavvio
+        if original_theme != theme or original_font_size != font_size or original_window_size != window_size:
+            message += "\nAlcune modifiche (tema, dimensione font, dimensione finestra) richiedono il riavvio dell'applicazione per essere applicate completamente."
+        
+        messagebox.showinfo("Impostazioni salvate", message, parent=self)
     
     def reset_to_defaults(self):
         """Ripristina le impostazioni predefinite"""

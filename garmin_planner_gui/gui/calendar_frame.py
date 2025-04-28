@@ -200,6 +200,12 @@ class CalendarFrame(ttk.Frame):
         # Disabilita il pulsante di pianificazione fino al login
         self.schedule_button['state'] = 'disabled'
         
+        self.delete_workout_button = ttk.Button(workouts_buttons, text="Elimina da Garmin", 
+                                             command=self.delete_workout)
+        self.delete_workout_button.pack(side=tk.LEFT, padx=5)
+
+        self.delete_workout_button['state'] = 'disabled'
+
         # Associa evento di doppio click
         self.workouts_tree.bind("<Double-1>", lambda e: self.schedule_workout())
         
@@ -692,12 +698,14 @@ class CalendarFrame(ttk.Frame):
         if hasattr(self, 'current_workout'):
             del self.current_workout
     
-    def sync_calendar(self):
+    def sync_calendar(self, show_messages=True):
         """Sincronizza il calendario con Garmin Connect"""
+        logging.info(f"sync_calendar chiamato: garmin_client è {'presente' if self.garmin_client else 'assente'}")
         if not self.garmin_client:
-            messagebox.showerror("Errore", 
-                               "Devi essere connesso a Garmin Connect", 
-                               parent=self)
+            if show_messages:
+                messagebox.showerror("Errore", 
+                                   "Devi essere connesso a Garmin Connect", 
+                                   parent=self)
             return
         
         try:
@@ -710,14 +718,17 @@ class CalendarFrame(ttk.Frame):
             # Ridisegna il calendario
             self.draw_calendar()
             
-            # Mostra messaggio di conferma
-            messagebox.showinfo("Sincronizzazione completata", 
-                              "Calendario sincronizzato con Garmin Connect", 
-                              parent=self)
+            # Mostra messaggio di conferma solo se richiesto
+            if show_messages:
+                messagebox.showinfo("Sincronizzazione completata", 
+                                  "Calendario sincronizzato con Garmin Connect", 
+                                  parent=self)
         except Exception as e:
-            messagebox.showerror("Errore", 
-                               f"Impossibile sincronizzare il calendario: {str(e)}", 
-                               parent=self)
+            logging.error(f"Errore durante la sincronizzazione del calendario: {str(e)}")
+            if show_messages:
+                messagebox.showerror("Errore", 
+                                   f"Impossibile sincronizzare il calendario: {str(e)}", 
+                                   parent=self)
     
     def fetch_scheduled_workouts(self):
         """Ottiene gli allenamenti programmati da Garmin Connect"""
@@ -748,6 +759,7 @@ class CalendarFrame(ttk.Frame):
             end_date = datetime.date.today() + datetime.timedelta(days=365)
             
             self.scheduled_workouts = []
+            seen_ids = set()  # Set per tenere traccia degli ID già visti
             
             # Ottieni il calendario per ogni mese nel periodo
             current_date = datetime.date(start_date.year, start_date.month, 1)
@@ -760,7 +772,11 @@ class CalendarFrame(ttk.Frame):
                 # Cerca gli allenamenti
                 for item in response.get('calendarItems', []):
                     if item.get('itemType') == 'workout':
-                        self.scheduled_workouts.append(item)
+                        # Controlla se questo ID è già stato visto
+                        item_id = item.get('id')
+                        if item_id not in seen_ids:
+                            seen_ids.add(item_id)
+                            self.scheduled_workouts.append(item)
                 
                 # Passa al mese successivo
                 if current_date.month == 12:
@@ -778,7 +794,7 @@ class CalendarFrame(ttk.Frame):
         
         # Chiudi la finestra di progresso
         progress.destroy()
-    
+        
     def fetch_available_workouts(self):
         """Ottiene gli allenamenti disponibili da Garmin Connect"""
         if not self.garmin_client:
@@ -862,18 +878,23 @@ class CalendarFrame(ttk.Frame):
     
     def on_login(self, client):
         """Gestisce l'evento di login completato"""
+        logging.info("on_login chiamato in CalendarFrame")
+        
+        if client is None:
+            logging.error("Client Garmin è None in on_login di CalendarFrame")
+        else:
+            logging.info("Client Garmin valido ricevuto in on_login di CalendarFrame")
+        
         self.garmin_client = client
         
         # Abilita i pulsanti
         self.sync_button['state'] = 'normal'
         self.schedule_button['state'] = 'normal'
+        self.delete_workout_button['state'] = 'normal'
         
-        # Ottieni gli allenamenti
-        self.fetch_scheduled_workouts()
-        self.fetch_available_workouts()
-        
-        # Ridisegna il calendario
-        self.draw_calendar()
+        # Ottieni gli allenamenti (sincronizza sempre in modo silenzioso)
+        # Aggiungiamo un breve ritardo per assicurarci che l'interfaccia sia pronta
+        self.after(500, lambda: self.sync_calendar(show_messages=False))
     
     def on_logout(self):
         """Gestisce l'evento di logout"""
@@ -884,7 +905,8 @@ class CalendarFrame(ttk.Frame):
         self.schedule_button['state'] = 'disabled'
         self.cancel_button['state'] = 'disabled'
         self.move_button['state'] = 'disabled'
-        
+        self.delete_workout_button['state'] = 'disabled'
+
         # Pulisci i dati
         self.scheduled_workouts = []
         if hasattr(self, 'available_workouts'):
@@ -898,3 +920,54 @@ class CalendarFrame(ttk.Frame):
         
         # Ridisegna il calendario
         self.draw_calendar()
+
+
+    def delete_workout(self):
+        """Elimina un allenamento da Garmin Connect"""
+        # Verifica che sia selezionato un allenamento
+        selection = self.workouts_tree.selection()
+        if not selection:
+            messagebox.showwarning("Nessuna selezione", 
+                                 "Seleziona un allenamento da eliminare", 
+                                 parent=self)
+            return
+        
+        # Ottieni l'allenamento
+        item = selection[0]
+        values = self.workouts_tree.item(item, "values")
+        name = values[0]
+        workout_id = self.workouts_tree.item(item, "tags")[0]
+        
+        # Chiedi conferma
+        if not messagebox.askyesno("Conferma eliminazione", 
+                                f"Sei sicuro di voler eliminare l'allenamento '{name}' da Garmin Connect?", 
+                                parent=self):
+            return
+        
+        try:
+            # Elimina l'allenamento
+            if self.garmin_client:
+                self.garmin_client.delete_workout(workout_id)
+                
+                # Aggiorna la lista
+                self.fetch_available_workouts()
+                
+                # Aggiorna anche gli allenamenti pianificati poiché l'eliminazione 
+                # potrebbe aver rimosso anche le pianificazioni
+                self.fetch_scheduled_workouts()
+                
+                # Ridisegna il calendario
+                self.draw_calendar()
+                
+                # Mostra messaggio di conferma
+                messagebox.showinfo("Operazione completata", 
+                                    f"Allenamento '{name}' eliminato da Garmin Connect", 
+                                    parent=self)
+            else:
+                messagebox.showerror("Errore", 
+                                    "Devi essere connesso a Garmin Connect", 
+                                    parent=self)
+        except Exception as e:
+            messagebox.showerror("Errore", 
+                                f"Impossibile eliminare l'allenamento: {str(e)}", 
+                                parent=self)

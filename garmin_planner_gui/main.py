@@ -37,15 +37,21 @@ class GarminPlannerApp(tk.Tk):
     def __init__(self):
         super().__init__()
         
+        # Carica la configurazione
+        self.config = load_config()
+        
+        # Applica le impostazioni dell'interfaccia utente
+        self.apply_ui_settings()
+        
         self.title("Garmin Planner")
-        self.geometry("1024x768")
+        
+        # Imposta la dimensione della finestra dalla configurazione
+        window_size = self.config.get('ui_preferences', {}).get('window_size', '1024x768')
+        self.geometry(window_size)
         self.minsize(800, 600)
         
         # Configura gli stili
-        setup_styles()
-        
-        # Carica la configurazione
-        self.config = load_config()
+        setup_styles(self.config)
         
         # Verifica se esiste una sessione salvata
         self.garmin_client = None
@@ -91,6 +97,35 @@ class GarminPlannerApp(tk.Tk):
         
         # Verifica se c'è un token OAuth salvato e prova a usarlo
         self.try_auto_login()
+
+
+    def apply_ui_settings(self):
+        """Applica le impostazioni dell'interfaccia utente"""
+        ui_prefs = self.config.get('ui_preferences', {})
+        
+        # Applica il tema
+        theme = ui_prefs.get('theme', 'default')
+        try:
+            if theme == 'light':
+                self.tk_setPalette(background=COLORS["bg_light"], foreground=COLORS["text_dark"])
+            elif theme == 'dark':
+                self.tk_setPalette(background=COLORS["bg_header"], foreground=COLORS["text_light"])
+            else:  # default
+                self.tk_setPalette(background=COLORS["bg_main"], foreground=COLORS["text_dark"])
+        except Exception as e:
+            logging.warning(f"Impossibile impostare il tema: {str(e)}")
+        
+        # Applica la dimensione del font
+        font_size = ui_prefs.get('font_size', 'medium')
+        try:
+            if font_size == 'small':
+                self.option_add('*Font', 'Arial 9')
+            elif font_size == 'large':
+                self.option_add('*Font', 'Arial 12')
+            else:  # medium
+                self.option_add('*Font', 'Arial 10')
+        except Exception as e:
+            logging.warning(f"Impossibile impostare la dimensione del font: {str(e)}")
     
     def try_auto_login(self):
         """Tenta un login automatico se è disponibile un token OAuth"""
@@ -105,10 +140,18 @@ class GarminPlannerApp(tk.Tk):
                 _ = self.garmin_client.list_workouts()
                 self.logged_in = True
                 self.update_login_status("Connesso a Garmin Connect")
+                
+                # IMPORTANTE: Aggiorna tutti i frame con il client
+                self.workout_editor_frame.on_login(self.garmin_client)
+                self.calendar_frame.on_login(self.garmin_client)
+                self.import_export_frame.on_login(self.garmin_client)
+                
+                # Aggiorna l'UI del login frame
                 self.login_frame.update_ui_after_login()
                 
                 # Passa alla seconda scheda (Allenamenti) dopo il login
                 self.notebook.select(1)
+                
             except Exception as e:
                 logging.error(f"Errore nel login automatico: {str(e)}")
                 self.login_frame.show_login_error(f"Errore nel login automatico: {str(e)}")

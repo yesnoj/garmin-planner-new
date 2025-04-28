@@ -17,6 +17,7 @@ COLORS = {
     "bg_light": "#ffffff",
     "accent": "#0076c0",  # Blu Garmin
     "accent_dark": "#005486",
+    "accent_light": "#66a3d2",  # Versione più chiara del blu Garmin
     "text_light": "#ffffff",
     "text_dark": "#333333",
     "warmup": "#52b69a",   # Verde acqua 
@@ -52,8 +53,36 @@ SPORT_ICONS = {
     "swimming": "🏊"    # Persona che nuota
 }
 
-def setup_styles():
+def setup_styles(config=None):
     """Configura gli stili dell'applicazione"""
+    # Usa la configurazione predefinita se non fornita
+    if config is None:
+        config = {'ui_preferences': {'theme': 'default', 'font_size': 'medium'}}
+    
+    ui_prefs = config.get('ui_preferences', {})
+    theme = ui_prefs.get('theme', 'default')
+    font_size = ui_prefs.get('font_size', 'medium')
+    
+    # Determina le dimensioni del font
+    if font_size == 'small':
+        default_font = ('Arial', 9)
+        heading_font = ('Arial', 12, 'bold')
+        subheading_font = ('Arial', 11)
+        button_font = ('Arial', 9)
+        small_font = ('Arial', 8)
+    elif font_size == 'large':
+        default_font = ('Arial', 12)
+        heading_font = ('Arial', 16, 'bold')
+        subheading_font = ('Arial', 14)
+        button_font = ('Arial', 12)
+        small_font = ('Arial', 10)
+    else:  # medium
+        default_font = ('Arial', 10)
+        heading_font = ('Arial', 14, 'bold')
+        subheading_font = ('Arial', 12)
+        button_font = ('Arial', 10)
+        small_font = ('Arial', 9)
+    
     style = ttk.Style()
     
     # Imposta il tema di base
@@ -64,60 +93,77 @@ def setup_styles():
         # Se non disponibile, usa il tema predefinito
         pass
     
+    # Colori in base al tema
+    if theme == 'light':
+        bg_color = COLORS["bg_light"]
+        fg_color = COLORS["text_dark"]
+        accent_color = COLORS["accent"]
+    elif theme == 'dark':
+        bg_color = COLORS["bg_header"]
+        fg_color = COLORS["text_light"]
+        accent_color = COLORS["accent_light"]
+    else:  # default
+        bg_color = COLORS["bg_main"]
+        fg_color = COLORS["text_dark"]
+        accent_color = COLORS["accent"]
+    
     # Stile per il frame principale
-    style.configure("TFrame", background=COLORS["bg_main"])
+    style.configure("TFrame", background=bg_color)
     
     # Stile per le etichette
-    style.configure("TLabel", background=COLORS["bg_main"], font=("Arial", 10))
+    style.configure("TLabel", 
+                   font=default_font,
+                   background=bg_color, 
+                   foreground=fg_color)
     
     # Stile per i bottoni
     style.configure("TButton", 
-                   font=("Arial", 10), 
-                   background=COLORS["accent"],
+                   font=button_font, 
+                   background=accent_color,
                    foreground=COLORS["text_light"])
     
     # Stile per i bottoni accentuati
     style.configure("Accent.TButton", 
-                   font=("Arial", 10, "bold"), 
+                   font=button_font, 
                    background=COLORS["accent"],
                    foreground=COLORS["text_light"])
     
     # Stile per i bottoni di successo
     style.configure("Success.TButton", 
-                   font=("Arial", 10), 
+                   font=button_font, 
                    background=COLORS["success"],
                    foreground=COLORS["text_light"])
     
     # Stile per i bottoni di warning
     style.configure("Warning.TButton", 
-                   font=("Arial", 10), 
+                   font=button_font, 
                    background=COLORS["warning"],
                    foreground=COLORS["text_dark"])
     
     # Stile per i bottoni di errore
     style.configure("Error.TButton", 
-                   font=("Arial", 10), 
+                   font=button_font, 
                    background=COLORS["error"],
                    foreground=COLORS["text_light"])
     
     # Stile per le caselle di testo
-    style.configure("TEntry", font=("Arial", 10))
+    style.configure("TEntry", font=default_font)
     
     # Stile per i combobox
-    style.configure("TCombobox", font=("Arial", 10))
+    style.configure("TCombobox", font=default_font)
     
     # Stile per le schede
-    style.configure("TNotebook", background=COLORS["bg_main"])
+    style.configure("TNotebook", background=bg_color)
     style.configure("TNotebook.Tab", 
-                   font=("Arial", 10, "bold"),
+                   font=button_font,
                    padding=[10, 5])
     
     # Stile per le barre di scorrimento
-    style.configure("TScrollbar", background=COLORS["bg_light"])
+    style.configure("TScrollbar", background=bg_color)
     
     # Stile per i progressbar
     style.configure("TProgressbar", 
-                   background=COLORS["accent"],
+                   background=accent_color,
                    troughcolor=COLORS["bg_light"])
     
     # Stile per i separatori
@@ -125,36 +171,45 @@ def setup_styles():
     
     # Stile per i pannelli
     style.configure("TLabelframe", 
-                   background=COLORS["bg_main"],
-                   font=("Arial", 10, "bold"))
+                   background=bg_color,
+                   font=button_font)
     style.configure("TLabelframe.Label", 
-                   background=COLORS["bg_main"],
-                   font=("Arial", 10, "bold"))
+                   background=bg_color,
+                   font=button_font)
     
     # Stile per intestazioni
     style.configure("Heading.TLabel", 
-                   font=("Arial", 14, "bold"),
-                   background=COLORS["bg_main"])
+                   font=heading_font,
+                   background=bg_color)
     
     # Stile per sottotitoli
     style.configure("Subheading.TLabel", 
-                   font=("Arial", 12),
-                   background=COLORS["bg_main"])
+                   font=subheading_font,
+                   background=bg_color)
     
     # Stile per il testo di stato
     style.configure("Status.TLabel", 
-                   font=("Arial", 9),
-                   background=COLORS["bg_main"])
+                   font=small_font,
+                   background=bg_color)
     
     # Stile per il testo di istruzioni
     style.configure("Instructions.TLabel", 
-                   font=("Arial", 10, "italic"),
-                   background=COLORS["bg_main"])
+                   font=default_font,
+                   background=bg_color)
     
     # Stile per le tabelle (Treeview)
     style.configure("Treeview", 
-                   font=("Arial", 10),
+                   font=default_font,
                    background=COLORS["bg_light"],
                    fieldbackground=COLORS["bg_light"])
     style.configure("Treeview.Heading", 
-                   font=("Arial", 10, "bold"))
+                   font=button_font)
+                   
+    # Stili specifici per il calendario
+    style.configure("Today.TFrame", 
+                    background=accent_color,
+                    relief="raised")
+    style.configure("Today.TLabel", 
+                    background=accent_color,
+                    foreground=COLORS["text_light"],
+                    font=button_font)
