@@ -718,26 +718,42 @@ class WorkoutEditorFrame(ttk.Frame):
         """Gestisce il cambio di tipo di sport"""
         sport_type = self.sport_var.get()
         
-        # Aggiorna l'interfaccia in base al tipo di sport
-        # (Potrebbe influire sui ritmi/velocità mostrati nei dialog)
+        # Se non è un evento reale o non ci sono step, non fare nulla
+        if event is None or not hasattr(self, 'current_steps') or not self.current_steps:
+            return
         
-        # Se ci sono già degli step, chiedi conferma
-        if self.current_steps and event is not None:  # Solo per eventi reali, non inizializzazione
+        # Trova il tipo di sport attuale dai metadati
+        current_sport_type = "running"  # Default
+        for step in self.current_steps:
+            if isinstance(step, dict) and 'sport_type' in step:
+                current_sport_type = step['sport_type']
+                break
+        
+        # Se il tipo di sport è cambiato, chiedi conferma
+        if current_sport_type != sport_type:
             if ask_yes_no("Cambio tipo di sport", 
-                        f"Hai cambiato il tipo di sport in {sport_type}.\n"
+                        f"Hai cambiato il tipo di sport da {current_sport_type} a {sport_type}.\n"
                         f"Questo potrebbe richiedere l'adattamento dei passi esistenti.\n"
                         f"Continuare?", 
                         parent=self):
-                # Aggiorna i passi per il nuovo tipo di sport
-                # (in pratica non fa nulla per ora, sarà gestito in fase di modifica)
-                pass
-            else:
-                # Ripristina il tipo di sport precedente
-                # Cerca nei metadati dei passi
-                for step in self.current_steps:
+                # Aggiorna il tipo di sport nei metadati
+                for i, step in enumerate(self.current_steps):
                     if isinstance(step, dict) and 'sport_type' in step:
-                        self.sport_var.set(step['sport_type'])
-                        return
+                        self.current_steps[i] = {'sport_type': sport_type}
+                        break
+                else:
+                    # Se non è stato trovato un passo con sport_type, aggiungi un nuovo passo
+                    self.current_steps.insert(0, {'sport_type': sport_type})
+                
+                # Informa l'utente che alcuni passi potrebbero richiedere modifiche manuali
+                show_info("Tipo di sport aggiornato", 
+                        "Il tipo di sport è stato aggiornato. Potresti dover rivedere i passi esistenti "
+                        "per assicurarti che siano compatibili con il nuovo tipo di sport.", 
+                        parent=self)
+                
+            else:
+                # Ripristina il tipo di sport precedente senza triggerare nuovi eventi
+                self.sport_var.set(current_sport_type)
     
     def show_calendar(self):
         """Mostra un selettore di data"""
@@ -1334,145 +1350,292 @@ class WorkoutEditorFrame(ttk.Frame):
         """Estrae il target dal dettaglio di uno step"""
         from planner.workout import Target
         
-        # Pattern per '@' o '@spd' o '@hr'
-        if ' @ ' in step_detail:
-            # Estrai la zona dopo '@'
-            parts = step_detail.split(' @ ', 1)
-            zone = parts[1].split(' -- ')[0].strip()
-            
-            # Usa pace_to_ms dalla libreria utils per convertire
-            try:
-                from planner.utils import pace_to_ms
+        # Se non c'è un dettaglio o è vuoto, nessun target
+        if not step_detail:
+            return None
+        
+        try:
+            # Pattern per '@' o '@spd' o '@hr'
+            if ' @ ' in step_detail:
+                # Estrai la zona dopo '@'
+                parts = step_detail.split(' @ ', 1)
+                if len(parts) < 2:
+                    return None
+                    
+                zone_part = parts[1]
+                zone = zone_part.split(' -- ')[0].strip() if ' -- ' in zone_part else zone_part.strip()
+                
+                # Importa pace_to_ms in modo sicuro
+                try:
+                    from planner.utils import pace_to_ms
+                except ImportError:
+                    logging.error("Impossibile importare pace_to_ms da planner.utils")
+                    return Target('pace.zone', 2.5, 3.0)  # Valori di default
                 
                 # Verifica se è una zona definita o un valore diretto
-                if zone in self.workout_config.get('paces', {}):
-                    pace_value = self.workout_config['paces'][zone]
-                    pace_ms = pace_to_ms(pace_value)
-                    return Target('pace.zone', pace_ms * 0.9, pace_ms * 1.1)
-                elif re.match(r'^\d{1,2}:\d{2}$', zone):
-                    # È un valore di ritmo diretto
-                    pace_ms = pace_to_ms(zone)
-                    return Target('pace.zone', pace_ms * 0.9, pace_ms * 1.1)
-                else:
-                    # Prova come zona numerica
-                    return Target('pace.zone', 2.5, 3.0)  # Valori di default
-            except:
-                return None
-        
-        elif ' @spd ' in step_detail:
-            # Estrai la zona dopo '@spd'
-            parts = step_detail.split(' @spd ', 1)
-            zone = parts[1].split(' -- ')[0].strip()
-            
-            # Converti in m/s
-            try:
-                # Verifica se è una zona definita o un valore diretto
-                if zone in self.workout_config.get('speeds', {}):
-                    speed_value = float(self.workout_config['speeds'][zone])
-                    speed_ms = speed_value / 3.6  # km/h to m/s
-                    return Target('pace.zone', speed_ms * 0.9, speed_ms * 1.1)
-                elif re.match(r'^\d+(\.\d+)?$', zone):
-                    # È un valore di velocità diretto
-                    speed_ms = float(zone) / 3.6  # km/h to m/s
-                    return Target('pace.zone', speed_ms * 0.9, speed_ms * 1.1)
-                else:
-                    # Prova come zona numerica
-                    return Target('pace.zone', 2.5, 3.0)  # Valori di default
-            except:
-                return None
-        
-        elif ' @hr ' in step_detail:
-            # Estrai la zona dopo '@hr'
-            parts = step_detail.split(' @hr ', 1)
-            zone = parts[1].split(' -- ')[0].strip()
-            
-            # Verifica se è una zona definita
-            if zone in self.workout_config.get('heart_rates', {}):
-                hr_value = self.workout_config['heart_rates'][zone]
-                
-                # Gestisci diversi formati
-                if isinstance(hr_value, int):
-                    # Valore singolo
-                    return Target('heart.rate.zone', hr_value, hr_value)
-                elif '-' in str(hr_value):
-                    # Intervallo (es. 140-160)
-                    hr_parts = str(hr_value).split('-')
-                    return Target('heart.rate.zone', int(hr_parts[0]), int(hr_parts[1]))
-                else:
-                    # Altro formato
-                    return Target('heart.rate.zone', 130, 150)  # Valori di default
-            elif re.match(r'^Z\d+_HR$', zone):
-                # Zona numerica (es. Z3_HR)
-                zone_num = int(zone[1:-3])
-                return Target('heart.rate.zone', zone=zone_num)
-            else:
-                # Prova come valori diretti
-                if '-' in zone:
-                    hr_parts = zone.split('-')
-                    return Target('heart.rate.zone', int(hr_parts[0]), int(hr_parts[1]))
-                else:
+                paces_dict = self.workout_config.get('paces', {})
+                if zone in paces_dict:
+                    pace_value = paces_dict[zone]
+                    
+                    # Gestisci diversi formati di ritmo
+                    if '-' in pace_value:
+                        # Formato intervallo (es. "4:30-5:00")
+                        pace_parts = pace_value.split('-')
+                        if len(pace_parts) == 2:
+                            try:
+                                slow_pace = pace_to_ms(pace_parts[0])
+                                fast_pace = pace_to_ms(pace_parts[1])
+                                return Target('pace.zone', fast_pace, slow_pace)
+                            except Exception as e:
+                                logging.warning(f"Errore nella conversione del ritmo '{pace_value}': {str(e)}")
+                        
+                    # Formato singolo valore
                     try:
-                        hr_value = int(zone)
-                        return Target('heart.rate.zone', hr_value, hr_value)
-                    except:
-                        return Target('heart.rate.zone', 130, 150)  # Valori di default
+                        pace_ms = pace_to_ms(pace_value)
+                        # Aggiungi margini del 10%
+                        return Target('pace.zone', pace_ms * 0.9, pace_ms * 1.1)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione del ritmo '{pace_value}': {str(e)}")
+                        
+                # Prova come valore diretto
+                elif re.match(r'^\d{1,2}:\d{2}$', zone):
+                    try:
+                        pace_ms = pace_to_ms(zone)
+                        return Target('pace.zone', pace_ms * 0.9, pace_ms * 1.1)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione del ritmo diretto '{zone}': {str(e)}")
+                
+                # Zona numerica (es. Z1, Z2, etc)
+                elif re.match(r'^Z\d+$', zone):
+                    try:
+                        zone_num = int(zone[1:])
+                        # Valori tipici per le zone
+                        pace_ranges = {
+                            1: (3.0, 3.5),  # Zona 1: ritmo lento
+                            2: (3.2, 3.7),  # Zona 2: ritmo medio
+                            3: (3.5, 4.0),  # Zona 3: ritmo moderato
+                            4: (3.8, 4.3),  # Zona 4: ritmo veloce
+                            5: (4.2, 4.7)   # Zona 5: ritmo molto veloce
+                        }
+                        
+                        zone_range = pace_ranges.get(zone_num, (2.5, 3.0))
+                        return Target('pace.zone', zone_range[0], zone_range[1])
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della zona '{zone}': {str(e)}")
+                
+                # Valore di default se nessuna conversione è riuscita
+                return Target('pace.zone', 2.5, 3.0)
+            
+            # Velocità (ciclismo)
+            elif ' @spd ' in step_detail:
+                # Estrai la zona dopo '@spd'
+                parts = step_detail.split(' @spd ', 1)
+                if len(parts) < 2:
+                    return None
+                    
+                zone_part = parts[1]
+                zone = zone_part.split(' -- ')[0].strip() if ' -- ' in zone_part else zone_part.strip()
+                
+                # Verifica se è una zona definita
+                speeds_dict = self.workout_config.get('speeds', {})
+                if zone in speeds_dict:
+                    speed_value = speeds_dict[zone]
+                    
+                    # Gestisci diversi formati di velocità
+                    if '-' in str(speed_value):
+                        # Formato intervallo (es. "23.0-27.0")
+                        speed_parts = str(speed_value).split('-')
+                        if len(speed_parts) == 2:
+                            try:
+                                low_speed = float(speed_parts[0]) / 3.6  # km/h to m/s
+                                high_speed = float(speed_parts[1]) / 3.6  # km/h to m/s
+                                return Target('speed.zone', low_speed, high_speed)
+                            except Exception as e:
+                                logging.warning(f"Errore nella conversione della velocità '{speed_value}': {str(e)}")
+                    
+                    # Formato singolo valore
+                    try:
+                        speed_ms = float(speed_value) / 3.6  # km/h to m/s
+                        # Aggiungi margini del 10%
+                        return Target('speed.zone', speed_ms * 0.9, speed_ms * 1.1)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della velocità '{speed_value}': {str(e)}")
+                
+                # Prova come valore diretto
+                elif re.match(r'^\d+(\.\d+)?$', zone):
+                    try:
+                        speed_ms = float(zone) / 3.6  # km/h to m/s
+                        return Target('speed.zone', speed_ms * 0.9, speed_ms * 1.1)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della velocità diretta '{zone}': {str(e)}")
+                
+                # Zona numerica (es. Z1, Z2, etc)
+                elif re.match(r'^Z\d+$', zone):
+                    try:
+                        zone_num = int(zone[1:])
+                        # Valori tipici per le zone
+                        speed_ranges = {
+                            1: (3.0, 4.0),  # Zona 1: velocità bassa
+                            2: (4.0, 5.0),  # Zona 2: velocità media-bassa
+                            3: (5.0, 6.0),  # Zona 3: velocità media
+                            4: (6.0, 7.0),  # Zona 4: velocità alta
+                            5: (7.0, 8.0)   # Zona 5: velocità molto alta
+                        }
+                        
+                        zone_range = speed_ranges.get(zone_num, (5.0, 6.0))
+                        return Target('speed.zone', zone_range[0], zone_range[1])
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della zona '{zone}': {str(e)}")
+                
+                # Valore di default per velocità
+                return Target('speed.zone', 5.0, 6.0)
+            
+            # Frequenza cardiaca
+            elif ' @hr ' in step_detail:
+                # Estrai la zona dopo '@hr'
+                parts = step_detail.split(' @hr ', 1)
+                if len(parts) < 2:
+                    return None
+                    
+                zone_part = parts[1]
+                zone = zone_part.split(' -- ')[0].strip() if ' -- ' in zone_part else zone_part.strip()
+                
+                # Verifica se è una zona definita
+                heart_rates = self.workout_config.get('heart_rates', {})
+                if zone in heart_rates:
+                    hr_value = heart_rates[zone]
+                    
+                    # Gestisci diversi formati di FC
+                    if isinstance(hr_value, str) and '-' in hr_value:
+                        # Formato intervallo (es. "140-160")
+                        hr_parts = hr_value.split('-')
+                        if len(hr_parts) == 2:
+                            try:
+                                low_hr = int(hr_parts[0])
+                                high_hr = int(hr_parts[1])
+                                return Target('heart.rate.zone', low_hr, high_hr)
+                            except Exception as e:
+                                logging.warning(f"Errore nella conversione della FC '{hr_value}': {str(e)}")
+                    
+                    # Formato singolo valore
+                    try:
+                        hr = int(hr_value)
+                        # Aggiungi margini di ±5 bpm
+                        return Target('heart.rate.zone', hr - 5, hr + 5)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della FC '{hr_value}': {str(e)}")
+                
+                # Prova come zona numerica
+                elif re.match(r'^Z\d+_HR$', zone):
+                    try:
+                        zone_num = int(zone[1:-3])
+                        return Target('heart.rate.zone', zone=zone_num)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della zona HR '{zone}': {str(e)}")
+                
+                # Prova come valore diretto o intervallo
+                elif '-' in zone:
+                    try:
+                        hr_parts = zone.split('-')
+                        low_hr = int(hr_parts[0])
+                        high_hr = int(hr_parts[1])
+                        return Target('heart.rate.zone', low_hr, high_hr)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione dell'intervallo HR '{zone}': {str(e)}")
+                elif zone.isdigit():
+                    try:
+                        hr = int(zone)
+                        return Target('heart.rate.zone', hr - 5, hr + 5)
+                    except Exception as e:
+                        logging.warning(f"Errore nella conversione della FC diretta '{zone}': {str(e)}")
+                
+                # Valore di default per FC
+                return Target('heart.rate.zone', 130, 150)
+            
+            # Nessun target riconosciuto
+            return None
         
-        # Nessun target
-        return None
+        except Exception as e:
+            logging.error(f"Errore imprevisto nell'estrazione del target: {str(e)}")
+            return None
     
     def extract_end_condition(self, step_detail):
         """Estrae la condizione di fine dal dettaglio di uno step"""
-        # Rimuovi eventuali parti dopo " -- " (descrizione)
-        if ' -- ' in step_detail:
-            step_detail = step_detail.split(' -- ')[0]
-        
-        # Rimuovi le parti di target
-        if ' @ ' in step_detail:
-            step_detail = step_detail.split(' @ ')[0]
-        elif ' @spd ' in step_detail:
-            step_detail = step_detail.split(' @spd ')[0]
-        elif ' @hr ' in step_detail:
-            step_detail = step_detail.split(' @hr ')[0]
-        
-        # Ora abbiamo solo la parte di durata/distanza
-        step_detail = step_detail.strip()
-        
-        # Gestisci il caso speciale "lap-button"
-        if step_detail == "lap-button":
+        if not step_detail:
             return "lap.button", None
-        
-        # Estrai la condizione di fine
-        if 'min' in step_detail:
-            # Durata in minuti
-            try:
-                minutes = int(step_detail.replace('min', '').strip())
-                return "time", str(minutes * 60)  # Converti in secondi
-            except:
+            
+        try:
+            # Rimuovi eventuali parti dopo " -- " (descrizione)
+            if ' -- ' in step_detail:
+                step_detail = step_detail.split(' -- ')[0]
+            
+            # Rimuovi le parti di target
+            if ' @ ' in step_detail:
+                step_detail = step_detail.split(' @ ')[0]
+            elif ' @spd ' in step_detail:
+                step_detail = step_detail.split(' @spd ')[0]
+            elif ' @hr ' in step_detail:
+                step_detail = step_detail.split(' @hr ')[0]
+            
+            # Ora abbiamo solo la parte di durata/distanza
+            step_detail = step_detail.strip()
+            
+            # Gestisci il caso speciale "lap-button"
+            if step_detail == "lap-button":
                 return "lap.button", None
-        elif 'km' in step_detail:
-            # Distanza in km
-            try:
-                km = float(step_detail.replace('km', '').strip())
-                return "distance", str(int(km * 1000))  # Converti in metri
-            except:
-                return "lap.button", None
-        elif 'm' in step_detail and not 'min' in step_detail:
-            # Distanza in metri
-            try:
-                meters = int(step_detail.replace('m', '').strip())
-                return "distance", str(meters)
-            except:
-                return "lap.button", None
-        elif re.match(r'^\d+:\d{2}$', step_detail):
-            # Formato mm:ss
-            try:
-                from planner.utils import hhmmss_to_seconds
-                seconds = hhmmss_to_seconds(step_detail)
-                return "time", str(seconds)
-            except:
-                return "lap.button", None
-        else:
+            
+            # Estrai la condizione di fine
+            if 'min' in step_detail:
+                # Durata in minuti
+                try:
+                    # Usa una regex per estrarre il numero (supporta anche decimali)
+                    match = re.search(r'(\d+(?:\.\d+)?)\s*min', step_detail)
+                    if match:
+                        minutes = float(match.group(1))
+                        return "time", str(int(minutes * 60))  # Converti in secondi
+                except Exception as e:
+                    logging.warning(f"Errore nell'estrazione della durata in minuti: {str(e)}")
+                    return "lap.button", None
+            elif 'km' in step_detail:
+                # Distanza in km
+                try:
+                    # Usa una regex per estrarre il numero (supporta anche decimali)
+                    match = re.search(r'(\d+(?:\.\d+)?)\s*km', step_detail)
+                    if match:
+                        km = float(match.group(1))
+                        return "distance", str(int(km * 1000))  # Converti in metri
+                except Exception as e:
+                    logging.warning(f"Errore nell'estrazione della distanza in km: {str(e)}")
+                    return "lap.button", None
+            elif 'm' in step_detail and 'min' not in step_detail:
+                # Distanza in metri
+                try:
+                    # Usa una regex per estrarre il numero (supporta anche decimali)
+                    match = re.search(r'(\d+(?:\.\d+)?)\s*m', step_detail)
+                    if match:
+                        meters = float(match.group(1))
+                        return "distance", str(int(meters))
+                except Exception as e:
+                    logging.warning(f"Errore nell'estrazione della distanza in metri: {str(e)}")
+                    return "lap.button", None
+            elif re.match(r'^\d+:\d{2}$', step_detail):
+                # Formato mm:ss
+                try:
+                    from planner.utils import hhmmss_to_seconds
+                    seconds = hhmmss_to_seconds(step_detail)
+                    return "time", str(seconds)
+                except Exception as e:
+                    logging.warning(f"Errore nella conversione del tempo '{step_detail}': {str(e)}")
+                    return "lap.button", None
+            elif step_detail.isdigit():
+                # Numero di ripetizioni per gli step di tipo "repeat"
+                return "iterations", int(step_detail)
+                
             # Default
+            return "lap.button", None
+            
+        except Exception as e:
+            logging.error(f"Errore imprevisto nell'estrazione della condizione di fine: {str(e)}")
             return "lap.button", None
     
     def extract_description(self, step_detail):

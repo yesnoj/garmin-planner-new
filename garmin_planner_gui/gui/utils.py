@@ -84,41 +84,125 @@ def ensure_config_dir():
         os.makedirs(CONFIG_DIR)
 
 def load_config():
-    """Carica la configurazione dell'applicazione"""
-    ensure_config_dir()
+    """Carica la configurazione dell'applicazione
     
+    Returns:
+        dict: La configurazione caricata o quella predefinita in caso di errore
+    """
+    # Assicurati che la directory esista
+    try:
+        ensure_config_dir()
+    except Exception as e:
+        logging.error(f"Errore nella creazione della directory di configurazione: {str(e)}")
+        return DEFAULT_CONFIG.copy()
+    
+    # Se il file esiste, prova a caricarlo
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, 'r') as f:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+            
+            # Verifica che sia un dizionario
+            if not isinstance(config, dict):
+                logging.error("Il file di configurazione non contiene un dizionario valido.")
+                return DEFAULT_CONFIG.copy()
             
             # Aggiorna la configurazione con eventuali nuove chiavi
             merged_config = DEFAULT_CONFIG.copy()
             deep_update(merged_config, config)
+            
+            logging.info("Configurazione caricata con successo.")
             return merged_config
+            
+        except json.JSONDecodeError as e:
+            logging.error(f"Errore di formato nel file di configurazione: {str(e)}")
+            
+            # Salva una copia del file corrotto
+            try:
+                import shutil
+                backup_file = f"{CONFIG_FILE}.bak"
+                shutil.copy2(CONFIG_FILE, backup_file)
+                logging.info(f"Creato backup del file di configurazione corrotto: {backup_file}")
+            except Exception as backup_err:
+                logging.error(f"Impossibile creare backup del file di configurazione: {str(backup_err)}")
+            
+            return DEFAULT_CONFIG.copy()
+            
         except Exception as e:
             logging.error(f"Errore nel caricamento della configurazione: {str(e)}")
-            return DEFAULT_CONFIG
+            return DEFAULT_CONFIG.copy()
     else:
-        return DEFAULT_CONFIG
+        logging.info("File di configurazione non trovato. Utilizzo configurazione predefinita.")
+        return DEFAULT_CONFIG.copy()
 
 def save_config(config):
-    """Salva la configurazione dell'applicazione"""
-    ensure_config_dir()
+    """Salva la configurazione dell'applicazione
+    
+    Args:
+        config (dict): La configurazione da salvare
+        
+    Returns:
+        bool: True se il salvataggio è riuscito, False altrimenti
+    """
+    if not isinstance(config, dict):
+        logging.error("Tentativo di salvare una configurazione non valida. Deve essere un dizionario.")
+        return False
+    
+    # Assicurati che la directory esista
+    try:
+        ensure_config_dir()
+    except Exception as e:
+        logging.error(f"Errore nella creazione della directory di configurazione: {str(e)}")
+        return False
+    
+    # Salva prima in un file temporaneo per evitare la corruzione
+    temp_file = f"{CONFIG_FILE}.tmp"
     
     try:
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=2)
+        # Serializza la configurazione
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        
+        # Sostituisci il file originale
+        if os.path.exists(CONFIG_FILE):
+            os.replace(temp_file, CONFIG_FILE)
+        else:
+            os.rename(temp_file, CONFIG_FILE)
+        
+        logging.info("Configurazione salvata con successo.")
+        return True
+        
     except Exception as e:
         logging.error(f"Errore nel salvataggio della configurazione: {str(e)}")
+        
+        # Pulisci i file temporanei
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except:
+                pass
+                
+        return False
 
 def deep_update(d, u):
-    """Aggiorna ricorsivamente un dizionario con un altro"""
+    """Aggiorna ricorsivamente un dizionario con un altro
+    
+    Args:
+        d: Il dizionario da aggiornare
+        u: Il dizionario con i nuovi valori
+        
+    Returns:
+        Il dizionario aggiornato (lo stesso oggetto d)
+    """
+    if not isinstance(d, dict) or not isinstance(u, dict):
+        return u
+        
     for k, v in u.items():
-        if isinstance(v, dict) and k in d and isinstance(d[k], dict):
-            deep_update(d[k], v)
+        if isinstance(v, dict):
+            d[k] = deep_update(d.get(k, {}), v)
         else:
             d[k] = v
+    return d
 
 def center_window(window):
     """Centra una finestra sullo schermo"""

@@ -708,27 +708,84 @@ class CalendarFrame(ttk.Frame):
                                    parent=self)
             return
         
+        # Mostra indicatore di progresso
         try:
-            # Aggiorna la lista degli allenamenti programmati
-            self.fetch_scheduled_workouts()
-            
-            # Aggiorna la lista degli allenamenti disponibili
-            self.fetch_available_workouts()
-            
-            # Ridisegna il calendario
-            self.draw_calendar()
-            
-            # Mostra messaggio di conferma solo se richiesto
+            # Crea una finestra di progresso
             if show_messages:
-                messagebox.showinfo("Sincronizzazione completata", 
-                                  "Calendario sincronizzato con Garmin Connect", 
-                                  parent=self)
-        except Exception as e:
-            logging.error(f"Errore durante la sincronizzazione del calendario: {str(e)}")
-            if show_messages:
-                messagebox.showerror("Errore", 
-                                   f"Impossibile sincronizzare il calendario: {str(e)}", 
-                                   parent=self)
+                progress = tk.Toplevel(self)
+                progress.title("Sincronizzazione in corso")
+                progress.geometry("300x100")
+                progress.transient(self)
+                progress.grab_set()
+                
+                # Etichetta
+                ttk.Label(progress, text="Sincronizzazione del calendario in corso...").pack(pady=(20, 10))
+                
+                # Barra di progresso
+                progressbar = ttk.Progressbar(progress, mode='indeterminate')
+                progressbar.pack(fill=tk.X, padx=20)
+                progressbar.start()
+                
+                # Aggiorna la finestra
+                progress.update()
+            else:
+                progress = None
+            
+            try:
+                # Aggiorna la lista degli allenamenti programmati
+                logging.info("Recupero degli allenamenti programmati...")
+                try:
+                    self.fetch_scheduled_workouts()
+                except Exception as sched_err:
+                    logging.error(f"Errore nel recupero degli allenamenti programmati: {str(sched_err)}")
+                    if show_messages:
+                        messagebox.showerror("Errore", 
+                                          f"Impossibile recuperare gli allenamenti programmati: {str(sched_err)}", 
+                                          parent=self)
+                    raise
+                
+                # Aggiorna la lista degli allenamenti disponibili
+                logging.info("Recupero degli allenamenti disponibili...")
+                try:
+                    self.fetch_available_workouts()
+                except Exception as avail_err:
+                    logging.error(f"Errore nel recupero degli allenamenti disponibili: {str(avail_err)}")
+                    if show_messages:
+                        messagebox.showerror("Errore", 
+                                          f"Impossibile recuperare gli allenamenti disponibili: {str(avail_err)}", 
+                                          parent=self)
+                    # Continuiamo comunque, perché gli allenamenti programmati sono più importanti
+                
+                # Ridisegna il calendario
+                logging.info("Aggiornamento grafico del calendario...")
+                try:
+                    self.draw_calendar()
+                except Exception as draw_err:
+                    logging.error(f"Errore nel ridisegno del calendario: {str(draw_err)}")
+                    # Non blocchiamo l'operazione per un errore di disegno
+                
+                # Mostra messaggio di conferma solo se richiesto
+                if show_messages:
+                    messagebox.showinfo("Sincronizzazione completata", 
+                                      "Calendario sincronizzato con Garmin Connect", 
+                                      parent=self)
+                
+                logging.info("Sincronizzazione del calendario completata con successo")
+                
+            except Exception as e:
+                logging.error(f"Errore durante la sincronizzazione del calendario: {str(e)}")
+                if show_messages:
+                    messagebox.showerror("Errore", 
+                                       f"Impossibile sincronizzare il calendario: {str(e)}", 
+                                       parent=self)
+            
+        finally:
+            # Chiudi la finestra di progresso se è stata creata
+            if show_messages and 'progress' in locals() and progress:
+                try:
+                    progress.destroy()
+                except:
+                    pass
     
     def fetch_scheduled_workouts(self):
         """Ottiene gli allenamenti programmati da Garmin Connect"""
