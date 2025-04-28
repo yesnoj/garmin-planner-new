@@ -73,7 +73,7 @@ DEFAULT_CONFIG = {
     "ui_preferences": {
         "theme": "default",
         "font_size": "medium",
-        "window_size": "1024x768"
+        "window_size": "1280x800"
     },
     "recent_files": []
 }

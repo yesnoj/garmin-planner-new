@@ -13,7 +13,7 @@ from .styles import COLORS, STEP_ICONS
 class StepDialog(tk.Toplevel):
     """Dialog per la definizione di un passo di allenamento"""
     
-    def __init__(self, parent, step_type=None, step_detail=None, sport_type="running"):
+    def __init__(self, parent, step_type=None, step_detail=None, sport_type="running", workout_config=None):
         super().__init__(parent)
         self.parent = parent
         self.result = None
@@ -21,15 +21,40 @@ class StepDialog(tk.Toplevel):
         
         # Configurazione del dialog
         self.title("Dettagli del passo")
-        self.geometry("550x350")
+        self.geometry("550x400")
         self.configure(bg=COLORS["bg_light"])
         
         # Rendi il dialog modale
         self.transient(parent)
         self.grab_set()
         
-        # Carica la configurazione
-        self.workout_config = parent.controller.config.get('workout_config', {})
+        # Carica la configurazione - gestisci diverse fonti di configurazione
+        if workout_config is not None:
+            # Usa la configurazione passata esplicitamente
+            self.workout_config = workout_config
+        elif hasattr(parent, 'controller') and parent.controller and hasattr(parent.controller, 'config'):
+            # Ottieni la configurazione dal controller del parent
+            self.workout_config = parent.controller.config.get('workout_config', {})
+        else:
+            # Usa una configurazione vuota con valori predefiniti
+            self.workout_config = {
+                'paces': {
+                    "Z1": "6:30", "Z2": "6:00", "Z3": "5:30", "Z4": "5:00", "Z5": "4:30",
+                    "recovery": "7:00", "threshold": "5:10", "marathon": "5:20"
+                },
+                'speeds': {
+                    "Z1": "15.0", "Z2": "20.0", "Z3": "25.0", "Z4": "30.0", "Z5": "35.0",
+                    "recovery": "12.0", "threshold": "28.0", "ftp": "32.0"
+                },
+                'swim_paces': {
+                    "Z1": "2:30", "Z2": "2:15", "Z3": "2:00", "Z4": "1:45", "Z5": "1:30",
+                    "recovery": "2:45", "threshold": "1:55", "sprint": "1:25"
+                },
+                'heart_rates': {
+                    "Z1_HR": "110-125", "Z2_HR": "125-140", "Z3_HR": "140-155", 
+                    "Z4_HR": "155-165", "Z5_HR": "165-180"
+                }
+            }
         
         # Inizializza l'interfaccia
         self.init_ui()

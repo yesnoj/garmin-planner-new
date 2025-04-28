@@ -612,7 +612,7 @@ class CalendarFrame(ttk.Frame):
             
             date_dialog = tk.Toplevel(self)
             date_dialog.title(title)
-            date_dialog.geometry("300x250")
+            date_dialog.geometry("300x350")
             date_dialog.transient(self)
             date_dialog.grab_set()
             

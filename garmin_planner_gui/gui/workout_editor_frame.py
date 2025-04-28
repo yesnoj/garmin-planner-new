@@ -529,13 +529,6 @@ class WorkoutEditorFrame(ttk.Frame):
                     
                     # Aggiungi alla treeview
                     item = self.steps_tree.insert("", "end", values=(i+1, step_type, details))
-                    
-                    # Aggiungi i substep come figli
-                    # for j, substep in enumerate(substeps):
-                    #     if isinstance(substep, dict) and len(substep) == 1:
-                    #         sub_type = list(substep.keys())[0]
-                    #         sub_detail = substep[sub_type]
-                    #         sub_item = self.steps_tree.insert(item, "end", values=(f"{i+1}.{j+1}", sub_type, sub_detail))
                 
                 elif len(step) == 1:
                     # Step normale
@@ -556,6 +549,9 @@ class WorkoutEditorFrame(ttk.Frame):
             self.delete_step_button['state'] = 'disabled'
             self.move_up_button['state'] = 'disabled'
             self.move_down_button['state'] = 'disabled'
+        
+        # Aggiorna anche la rappresentazione grafica
+        self.draw_workout()
     
     def add_step(self):
         """Aggiunge un nuovo step all'allenamento"""
@@ -600,7 +596,7 @@ class WorkoutEditorFrame(ttk.Frame):
         """Modifica lo step selezionato"""
         selection = self.steps_tree.selection()
         if not selection:
-            show_warning("Nessuna selezione", "Seleziona un passo da modificare", parent=self)
+            messagebox.showwarning("Nessuna selezione", "Seleziona un passo da modificare", parent=self)
             return
         
         # Ottieni l'indice
@@ -609,43 +605,40 @@ class WorkoutEditorFrame(ttk.Frame):
         # Ottieni lo step
         step = self.current_steps[index]
         
-        # Ottieni il tipo di sport corrente
-        sport_type = self.sport_var.get()
-        
-        # Gestisci diversi tipi di step
+        # Controlla il formato
         if isinstance(step, dict):
             if 'repeat' in step and 'steps' in step:
-                # Step di tipo "repeat"
+                # È un passo di tipo "repeat", aprire il dialog delle ripetizioni
                 iterations = step['repeat']
                 substeps = step['steps']
                 
-                # Apri il dialog per la modifica delle ripetizioni
-                dialog = RepeatDialog(self, iterations=iterations, steps=substeps, sport_type=sport_type)
+                # Usa la classe RepeatDialog per modificare la ripetizione
+                dialog = RepeatDialog(self, iterations=iterations, steps=substeps, sport_type=self.sport_var.get())
                 
-                # Se l'utente ha confermato
                 if dialog.result:
                     new_iterations, new_steps = dialog.result
                     
-                    # Aggiorna lo step
+                    # Aggiorna lo step di ripetizione con i nuovi valori
                     self.current_steps[index] = {'repeat': new_iterations, 'steps': new_steps}
-            
-            elif len(step) == 1:
-                # Step normale
+                    
+                    # Aggiorna la lista
+                    self.update_steps_tree()
+            else:
+                # Passo normale
                 step_type = list(step.keys())[0]
                 step_detail = step[step_type]
                 
-                # Apri il dialog per la modifica dello step
-                dialog = StepDialog(self, step_type=step_type, step_detail=step_detail, sport_type=sport_type)
+                # Usa la classe StepDialog per modificare il passo
+                dialog = StepDialog(self, step_type=step_type, step_detail=step_detail, sport_type=self.sport_var.get())
                 
-                # Se l'utente ha confermato
                 if dialog.result:
                     new_type, new_detail = dialog.result
                     
                     # Aggiorna lo step
                     self.current_steps[index] = {new_type: new_detail}
-        
-        # Aggiorna la lista
-        self.update_steps_tree()
+                    
+                    # Aggiorna la lista
+                    self.update_steps_tree()
     
     def delete_step(self):
         """Elimina lo step selezionato"""
@@ -1915,3 +1908,604 @@ class WorkoutEditorFrame(ttk.Frame):
         
         # Aggiorna l'interfaccia
         self.status_var.set("Non connesso a Garmin Connect")
+
+
+
+    def create_workout_editor(self, parent):
+        """Crea l'editor per l'allenamento selezionato"""
+        # Frame per le proprietà dell'allenamento
+        properties_frame = ttk.Frame(parent)
+        properties_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Griglia per le proprietà
+        ttk.Label(properties_frame, text="Nome:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.name_var = tk.StringVar()
+        name_entry = ttk.Entry(properties_frame, textvariable=self.name_var, width=40)
+        name_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=(0, 5), pady=5)
+        
+        # Settimana e sessione
+        ttk.Label(properties_frame, text="Settimana:").grid(row=1, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.week_var = tk.StringVar(value="01")
+        week_entry = ttk.Entry(properties_frame, textvariable=self.week_var, width=5)
+        week_entry.grid(row=1, column=1, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        ttk.Label(properties_frame, text="Sessione:").grid(row=1, column=2, sticky=tk.W, padx=(10, 5), pady=5)
+        self.session_var = tk.StringVar(value="01")
+        session_entry = ttk.Entry(properties_frame, textvariable=self.session_var, width=5)
+        session_entry.grid(row=1, column=3, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        ttk.Label(properties_frame, text="Descrizione:").grid(row=1, column=4, sticky=tk.W, padx=(10, 5), pady=5)
+        self.description_var = tk.StringVar()
+        description_entry = ttk.Entry(properties_frame, textvariable=self.description_var, width=20)
+        description_entry.grid(row=1, column=5, sticky=tk.W+tk.E, padx=(0, 5), pady=5)
+        
+        # Tipo di sport
+        ttk.Label(properties_frame, text="Sport:").grid(row=2, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.sport_var = tk.StringVar(value="running")
+        sport_combo = ttk.Combobox(properties_frame, textvariable=self.sport_var, 
+                                  values=["running", "cycling", "swimming"],
+                                  width=15, state="readonly")
+        sport_combo.grid(row=2, column=1, sticky=tk.W, padx=(0, 5), pady=5)
+        sport_combo.bind("<<ComboboxSelected>>", self.on_sport_change)
+        
+        # Data pianificata
+        ttk.Label(properties_frame, text="Data:").grid(row=2, column=2, sticky=tk.W, padx=(10, 5), pady=5)
+        self.date_var = tk.StringVar()
+        date_entry = ttk.Entry(properties_frame, textvariable=self.date_var, width=12)
+        date_entry.grid(row=2, column=3, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        # Pulsante calendario
+        calendar_button = ttk.Button(properties_frame, text="📅", width=3, 
+                                    command=self.show_calendar)
+        calendar_button.grid(row=2, column=4, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        # Configurazione colonne
+        properties_frame.columnconfigure(1, weight=1)
+        properties_frame.columnconfigure(5, weight=2)
+        
+        # Canvas per visualizzare graficamente i passi
+        canvas_frame = ttk.LabelFrame(parent, text="Anteprima allenamento")
+        canvas_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
+        
+        # Crea il canvas
+        self.canvas = tk.Canvas(canvas_frame, bg=COLORS["bg_light"], highlightthickness=0, height=140)
+        self.canvas.pack(fill=tk.X, expand=True, padx=5, pady=5)
+        
+        # Aggiungi i binding per drag and drop
+        self.canvas.bind("<ButtonPress-1>", self.on_canvas_press)
+        self.canvas.bind("<B1-Motion>", self.on_canvas_motion)
+        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
+        
+        # Inizializza i dati di trascinamento del canvas con una struttura completa
+        self.canvas_drag_data = {
+            "item": None,
+            "index": -1,
+            "start_x": 0,
+            "start_y": 0,
+            "current_x": 0,
+            "current_y": 0,
+            "type": "",
+            "color": ""
+        }
+        
+        # Frame per gli step dell'allenamento
+        steps_frame = ttk.LabelFrame(parent, text="Passi dell'allenamento")
+        steps_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        
+        # Toolbar per gli step
+        steps_toolbar = ttk.Frame(steps_frame)
+        steps_toolbar.pack(fill=tk.X, pady=(0, 5))
+        
+        # Pulsanti per gestire gli step
+        self.add_step_button = ttk.Button(steps_toolbar, text="Aggiungi passo", 
+                                        command=self.add_step)
+        self.add_step_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.add_repeat_button = ttk.Button(steps_toolbar, text="Aggiungi ripetizione", 
+                                          command=self.add_repeat)
+        self.add_repeat_button.pack(side=tk.LEFT, padx=5)
+        
+        self.edit_step_button = ttk.Button(steps_toolbar, text="Modifica", 
+                                         command=self.edit_step)
+        self.edit_step_button.pack(side=tk.LEFT, padx=5)
+        
+        self.delete_step_button = ttk.Button(steps_toolbar, text="Elimina", 
+                                           command=self.delete_step)
+        self.delete_step_button.pack(side=tk.LEFT, padx=5)
+        
+        self.move_up_button = ttk.Button(steps_toolbar, text="↑", width=3, 
+                                       command=self.move_step_up)
+        self.move_up_button.pack(side=tk.LEFT, padx=5)
+        
+        self.move_down_button = ttk.Button(steps_toolbar, text="↓", width=3, 
+                                         command=self.move_step_down)
+        self.move_down_button.pack(side=tk.LEFT, padx=5)
+        
+        # Lista degli step
+        steps_list_frame = ttk.Frame(steps_frame)
+        steps_list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Crea la treeview per gli step
+        columns = ("index", "type", "details")
+        self.steps_tree = ttk.Treeview(steps_list_frame, columns=columns, show="headings", 
+                                     selectmode="browse")
+        
+        # Definisci le intestazioni
+        self.steps_tree.heading("index", text="#")
+        self.steps_tree.heading("type", text="Tipo")
+        self.steps_tree.heading("details", text="Dettagli")
+        
+        # Definisci le larghezze delle colonne
+        self.steps_tree.column("index", width=30)
+        self.steps_tree.column("type", width=100)
+        self.steps_tree.column("details", width=400)
+        
+        # Aggiungi scrollbar
+        scrollbar = ttk.Scrollbar(steps_list_frame, orient=tk.VERTICAL, 
+                                command=self.steps_tree.yview)
+        self.steps_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack widgets
+        self.steps_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Aggiungi binding per drag and drop sulla TreeView
+        self.steps_tree.bind("<ButtonPress-1>", self.on_tree_press)
+        self.steps_tree.bind("<B1-Motion>", self.on_tree_motion)
+        self.steps_tree.bind("<ButtonRelease-1>", self.on_tree_release)
+        
+        # Inizializza i dati per il drag and drop nella TreeView
+        self.tree_drag_data = {"item": None, "index": -1}
+        
+        # Associa eventi
+        self.steps_tree.bind("<Double-1>", self.on_step_double_click)
+        self.steps_tree.bind("<<TreeviewSelect>>", self.on_step_select)
+        
+        # Frame per le azioni
+        action_frame = ttk.Frame(parent)
+        action_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        # Pulsanti per salvare/annullare
+        self.save_button = ttk.Button(action_frame, text="Salva allenamento", 
+                                    style="Success.TButton", 
+                                    command=self.save_workout)
+        self.save_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.cancel_button = ttk.Button(action_frame, text="Annulla modifiche", 
+                                      command=self.cancel_edit)
+        self.cancel_button.pack(side=tk.LEFT, padx=5)
+        
+        # Stato iniziale: disabilitato
+        self.disable_editor()
+
+
+    def on_canvas_press(self, event):
+        """Gestisce il click sul canvas per iniziare il drag-and-drop"""
+        # Canvas dimensions
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+        
+        # Se il canvas non è ancora inizializzato correttamente, forza l'aggiornamento
+        if width <= 1 or height <= 1:
+            self.canvas.update_idletasks()
+            width = self.canvas.winfo_width()
+            height = self.canvas.winfo_height()
+        
+        margin = 5
+        draw_width = width - 2 * margin
+        
+        # Calcola il centro e la zona cliccabile
+        center_y = height // 2
+        click_zone_height = 80  # Zona cliccabile più ampia
+        
+        # Verifica che ci siano step
+        if not self.current_steps or len(self.current_steps) == 0:
+            return
+        
+        # Verifica se il click è nella zona degli step (fascia centrale)
+        if center_y - click_zone_height/2 <= event.y <= center_y + click_zone_height/2:
+            # Calcola la larghezza di ciascun blocco e determina quale è stato cliccato
+            base_width = draw_width / len(self.current_steps)
+            
+            # Calcola l'indice dello step cliccato (correzione per i margini)
+            relative_x = event.x - margin
+            step_index = int(relative_x / base_width)
+            
+            # Verifica e limita l'indice per sicurezza
+            if 0 <= step_index < len(self.current_steps):
+                # Seleziona anche nella TreeView
+                try:
+                    tree_item = self.steps_tree.get_children()[step_index]
+                    self.steps_tree.selection_set(tree_item)
+                    self.steps_tree.see(tree_item)
+                except:
+                    pass
+                
+                # Memorizza i dettagli dell'elemento per il trascinamento
+                step = self.current_steps[step_index]
+                
+                # Inizializza i dati di trascinamento
+                self.canvas_drag_data = {
+                    "item": step,
+                    "index": step_index,
+                    "start_x": event.x,
+                    "start_y": event.y,
+                    "current_x": event.x,
+                    "current_y": event.y
+                }
+                
+                # Determina tipo e colore
+                if isinstance(step, dict):
+                    if 'repeat' in step and 'steps' in step:
+                        self.canvas_drag_data["type"] = "repeat"
+                        self.canvas_drag_data["color"] = COLORS["repeat"]
+                    elif len(step) == 1:
+                        step_type = list(step.keys())[0]
+                        self.canvas_drag_data["type"] = step_type
+                        self.canvas_drag_data["color"] = COLORS.get(step_type, COLORS["other"])
+                
+                # Ridisegna con l'elemento evidenziato
+                self.draw_workout(highlight_index=step_index)
+                return
+        
+        # Se arriviamo qui, nessuno step è stato selezionato
+        self.canvas_drag_data = {
+            "item": None,
+            "index": -1,
+            "start_x": 0,
+            "start_y": 0,
+            "current_x": 0,
+            "current_y": 0,
+            "type": "",
+            "color": ""
+        }
+
+    def on_canvas_motion(self, event):
+        """Gestisce il movimento del mouse durante il drag-and-drop nel canvas"""
+        # Solo se abbiamo un elemento selezionato
+        if self.canvas_drag_data["item"] is not None:
+            # Aggiorna la posizione corrente
+            self.canvas_drag_data["current_x"] = event.x
+            self.canvas_drag_data["current_y"] = event.y
+            
+            # Canvas dimensions
+            width = self.canvas.winfo_width()
+            height = self.canvas.winfo_height()
+            margin = 5
+            draw_width = width - 2 * margin
+            
+            # Calcola la larghezza di base per ogni step
+            base_width = draw_width / max(1, len(self.current_steps))
+            
+            # Determina la nuova posizione in base alla coordinata x
+            x = event.x
+            new_index = int((x - margin) / base_width)
+            
+            # Limita l'indice all'intervallo valido
+            new_index = max(0, min(new_index, len(self.current_steps) - 1))
+            
+            # Ridisegna il grafico con l'indicatore di trascinamento
+            self.draw_workout(drag_from=self.canvas_drag_data["index"], drag_to=new_index, event_x=event.x, event_y=event.y)
+
+    def on_canvas_release(self, event):
+        """Gestisce il rilascio del mouse per completare il drag-and-drop nel canvas"""
+        # Solo se abbiamo un elemento selezionato
+        if self.canvas_drag_data["item"] is not None:
+            # Canvas dimensions
+            width = self.canvas.winfo_width()
+            height = self.canvas.winfo_height()
+            margin = 5
+            draw_width = width - 2 * margin
+            
+            # Calcola la larghezza di base per ogni step
+            base_width = draw_width / max(1, len(self.current_steps))
+            
+            # Determina la nuova posizione in base alla coordinata x
+            x = event.x
+            new_index = int((x - margin) / base_width)
+            
+            # Limita l'indice all'intervallo valido
+            new_index = max(0, min(new_index, len(self.current_steps) - 1))
+            
+            # Sposta l'elemento solo se la posizione è cambiata
+            if new_index != self.canvas_drag_data["index"]:
+                source_index = self.canvas_drag_data["index"]
+                
+                # Esegui lo spostamento nella lista di step
+                item = self.current_steps.pop(source_index)
+                self.current_steps.insert(new_index, item)
+                
+                # Aggiorna la lista
+                self.update_steps_tree()
+                
+                # Seleziona l'elemento spostato nella lista
+                try:
+                    target_item = self.steps_tree.get_children()[new_index]
+                    self.steps_tree.selection_set(target_item)
+                    self.steps_tree.see(target_item)
+                except:
+                    pass
+            else:
+                # Se non c'è stato spostamento, ridisegna semplicemente senza evidenziazione
+                self.draw_workout()
+                
+            # Resetta i dati di trascinamento
+            self.canvas_drag_data = {
+                "item": None,
+                "index": -1,
+                "start_x": 0,
+                "start_y": 0,
+                "current_x": 0,
+                "current_y": 0,
+                "type": "",
+                "color": ""
+            }
+
+    def on_tree_press(self, event):
+        """Gestisce il click sulla treeview per iniziare il drag-and-drop"""
+        # Ottieni l'elemento cliccato
+        item = self.steps_tree.identify_row(event.y)
+        if item:
+            # Salva i dettagli dell'elemento
+            self.tree_drag_data = {"item": item, "index": self.steps_tree.index(item)}
+
+    def on_tree_motion(self, event):
+        """Gestisce il movimento del mouse durante il drag-and-drop nella treeview"""
+        # Solo se abbiamo un elemento selezionato
+        if self.tree_drag_data["item"]:
+            # Ottieni la posizione target
+            target_item = self.steps_tree.identify_row(event.y)
+            if target_item and target_item != self.tree_drag_data["item"]:
+                # Feedback visivo - potrebbe essere aggiunto in futuro
+                pass
+
+    def on_tree_release(self, event):
+        """Gestisce il rilascio del mouse per completare il drag-and-drop nella treeview"""
+        # Solo se abbiamo un elemento selezionato
+        if self.tree_drag_data["item"]:
+            # Ottieni la posizione target
+            target_item = self.steps_tree.identify_row(event.y)
+            if target_item and target_item != self.tree_drag_data["item"]:
+                # Ottieni gli indici sorgente e destinazione
+                target_index = self.steps_tree.index(target_item)
+                source_index = self.tree_drag_data["index"]
+                
+                # Sposta l'elemento nella lista degli step
+                item = self.current_steps.pop(source_index)
+                self.current_steps.insert(target_index, item)
+                
+                # Aggiorna la lista
+                self.update_steps_tree()
+                
+                # Seleziona l'elemento spostato
+                self.steps_tree.selection_set(self.steps_tree.get_children()[target_index])
+            
+            # Resetta i dati di trascinamento
+            self.tree_drag_data = {"item": None, "index": -1}
+
+    def on_step_select(self, event):
+        """Gestisce la selezione di uno step"""
+        selection = self.steps_tree.selection()
+        if selection:
+            # Ottieni l'indice dello step selezionato
+            index = self.steps_tree.index(selection[0])
+            # Ridisegna con l'elemento evidenziato
+            self.draw_workout(highlight_index=index)
+        else:
+            # Ridisegna senza evidenziazione
+            self.draw_workout()
+
+    def draw_workout(self, highlight_index=None, drag_from=None, drag_to=None, event_x=None, event_y=None):
+        """Disegna una rappresentazione visiva dell'allenamento sul canvas"""
+        self.canvas.delete("all")
+        
+        # Canvas dimensions
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+        
+        if width <= 1 or height <= 1:  # Canvas not yet realized
+            self.canvas.update_idletasks()
+            width = self.canvas.winfo_width()
+            height = self.canvas.winfo_height()
+            
+            # If still not realized, use default dimensions
+            if width <= 1:
+                width = 700
+            if height <= 1:
+                height = 150
+        
+        # Margin
+        margin = 5
+        
+        # Available drawing area
+        draw_width = width - 2 * margin
+        
+        # Se non ci sono step da disegnare
+        if not self.current_steps:
+            # Disegna un messaggio di istruzioni
+            self.canvas.create_text(
+                width // 2, height // 2,
+                text="Aggiungi passi all'allenamento per visualizzarli qui",
+                fill=COLORS["text_dark"],
+                font=("Arial", 10)
+            )
+            return
+        
+        # Calcola la larghezza di base per ogni step
+        base_width = draw_width / len(self.current_steps)
+        
+        # Posizione Y centrale
+        y = height // 2
+        
+        # Se stiamo trascinando, disegna un indicatore per la posizione target
+        if drag_from is not None and drag_to is not None:
+            # Calcola la posizione x dell'indicatore di trascinamento
+            indicator_x = margin + drag_to * base_width
+            
+            # Disegna una linea verticale per indicare dove verrà inserito l'elemento
+            self.canvas.create_line(
+                indicator_x, y - 30, 
+                indicator_x, y + 30,
+                fill=COLORS["accent"], width=2, dash=(6, 4)
+            )
+        
+        # Numerazione progressiva degli step
+        step_number = 1
+        
+        # Disegna gli step
+        for i, step in enumerate(self.current_steps):
+            x = margin + i * base_width
+            
+            # Calcola se questo step deve essere evidenziato
+            is_highlighted = (i == highlight_index)
+            
+            # Salta temporaneamente il disegno dell'elemento che stiamo trascinando
+            if i == drag_from and event_x is not None and event_y is not None:
+                continue
+            
+            outline_width = 2 if is_highlighted else 0
+            outline_color = COLORS["accent"] if is_highlighted else ""
+            
+            if isinstance(step, dict):
+                if 'repeat' in step and 'steps' in step:
+                    # Repeat step
+                    iterations = step['repeat']
+                    substeps = step['steps']
+                    
+                    # Larghezza per la ripetizione
+                    repeat_width = base_width
+                    
+                    # Draw repeat box
+                    repeat_x = x
+                    repeat_y = y - 30
+                    self.canvas.create_rectangle(
+                        repeat_x, repeat_y, 
+                        repeat_x + repeat_width, repeat_y + 60,
+                        outline=COLORS["repeat"], width=2, dash=(5, 2)
+                    )
+                    
+                    # Draw repeat label
+                    self.canvas.create_text(
+                        repeat_x + 10, repeat_y - 10,
+                        text=f"{STEP_ICONS['repeat']} {iterations}x",
+                        fill=COLORS["repeat"], 
+                        font=("Arial", 10, "bold"),
+                        anchor=tk.W
+                    )
+                    
+                    # Draw substeps
+                    sub_width = repeat_width / max(1, len(substeps))
+                    sub_x = x
+                    sub_number = 1
+                    
+                    for substep in substeps:
+                        if isinstance(substep, dict) and len(substep) == 1:
+                            substep_type = list(substep.keys())[0]
+                            
+                            # Color for this type
+                            color = COLORS.get(substep_type, COLORS["other"])
+                            
+                            # Draw box
+                            self.canvas.create_rectangle(
+                                sub_x, y - 20, sub_x + sub_width, y + 20,
+                                fill=color, outline=outline_color, width=outline_width
+                            )
+                            
+                            # Draw text
+                            self.canvas.create_text(
+                                sub_x + sub_width // 2, y,
+                                text=f"{STEP_ICONS.get(substep_type, '📝')} {sub_number}",
+                                fill=COLORS["text_light"],
+                                font=("Arial", 9, "bold")
+                            )
+                            
+                            # Disegna separatore tra substep (eccetto l'ultimo)
+                            if sub_number < len(substeps):
+                                self.canvas.create_line(
+                                    sub_x + sub_width, y - 20,
+                                    sub_x + sub_width, y + 20,
+                                    fill="white", width=1
+                                )
+                            
+                            sub_x += sub_width
+                            sub_number += 1
+                    
+                    step_number += 1
+                
+                elif len(step) == 1:
+                    # Regular step
+                    step_type = list(step.keys())[0]
+                    
+                    # Color for this type
+                    color = COLORS.get(step_type, COLORS["other"])
+                    
+                    # Draw box
+                    self.canvas.create_rectangle(
+                        x, y - 20, x + base_width, y + 20,
+                        fill=color, outline=outline_color, width=outline_width
+                    )
+                    
+                    # Draw text
+                    self.canvas.create_text(
+                        x + base_width // 2, y,
+                        text=f"{STEP_ICONS.get(step_type, '📝')} {step_number}",
+                        fill=COLORS["text_light"],
+                        font=("Arial", 9, "bold")
+                    )
+                    
+                    step_number += 1
+            
+            # Disegna separatori tra step (linea verticale)
+            if i < len(self.current_steps) - 1:
+                self.canvas.create_line(
+                    x + base_width, y - 22,
+                    x + base_width, y + 22,
+                    fill="#333333", width=1, dash=(2, 2)
+                )
+        
+        # Se stiamo trascinando, disegna l'elemento trascinato sotto il cursore
+        if drag_from is not None and event_x is not None and event_y is not None and self.canvas_drag_data.get("type"):
+            block_width = base_width
+            block_height = 40
+            
+            # Disegna un rettangolo semitrasparente che rappresenta l'elemento trascinato
+            element_type = self.canvas_drag_data["type"]
+            color = self.canvas_drag_data["color"]
+            
+            # Per ottenere un effetto semitrasparente, usiamo un colore leggermente più chiaro
+            light_color = self.lighten_color(color)
+            
+            # Disegna il rettangolo centrato sul cursore
+            self.canvas.create_rectangle(
+                event_x - block_width/2, event_y - block_height/2,
+                event_x + block_width/2, event_y + block_height/2,
+                fill=light_color, outline=COLORS["accent"], width=2
+            )
+            
+            # Aggiunge anche un'icona all'elemento trascinato
+            if element_type == "repeat":
+                icon = STEP_ICONS["repeat"]
+            else:
+                icon = STEP_ICONS.get(element_type, '📝')
+            
+            self.canvas.create_text(
+                event_x, event_y,
+                text=f"{icon} {drag_from + 1}",
+                fill=COLORS["text_dark"],
+                font=("Arial", 9, "bold")
+            )
+
+    def lighten_color(self, hex_color):
+        """Rende più chiaro un colore hexadecimale mescolandolo con bianco"""
+        # Converte hex_color in componenti RGB
+        r = int(hex_color[1:3], 16)
+        g = int(hex_color[3:5], 16)
+        b = int(hex_color[5:7], 16)
+        
+        # Mescola con bianco (255,255,255) con un rapporto 40/60
+        r = r * 0.6 + 255 * 0.4
+        g = g * 0.6 + 255 * 0.4
+        b = b * 0.6 + 255 * 0.4
+        
+        # Converte in hex e restituisce
+        return f"#{int(r):02x}{int(g):02x}{int(b):02x}"

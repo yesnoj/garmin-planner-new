@@ -46,9 +46,9 @@ class GarminPlannerApp(tk.Tk):
         self.title("Garmin Planner")
         
         # Imposta la dimensione della finestra dalla configurazione
-        window_size = self.config.get('ui_preferences', {}).get('window_size', '1024x768')
+        window_size = self.config.get('ui_preferences', {}).get('window_size', '1280x800')
         self.geometry(window_size)
-        self.minsize(800, 600)
+        self.minsize(1024, 700)
         
         # Configura gli stili
         setup_styles(self.config)

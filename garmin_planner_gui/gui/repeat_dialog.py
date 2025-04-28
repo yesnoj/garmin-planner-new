@@ -18,30 +18,33 @@ class RepeatDialog(tk.Toplevel):
         super().__init__(parent)
         self.parent = parent
         self.result = None
-        self.sport_type = sport_type
+        self.sport_type = sport_type  # Conserviamo il tipo di sport
         
-        # Valori iniziali
+        # Inizializza i valori prima di chiamare init_ui
         self.iterations = iterations if iterations is not None else 4
-        self.steps = steps if steps is not None else []
+        self.repeat_steps = steps if steps is not None else []
         
         # Configurazione del dialog
         self.title("Definizione ripetizioni")
-        self.geometry("600x400")
+        self.geometry("600x500")  # Dimensione aumentata per visualizzare tutto
         self.configure(bg=COLORS["bg_light"])
         
         # Rendi il dialog modale
         self.transient(parent)
         self.grab_set()
         
-        # Inizializza l'interfaccia
+        # Ora che i valori sono inizializzati, possiamo chiamare init_ui
         self.init_ui()
+        
+        # Carica i passi se disponibili
+        self.load_steps()
         
         # Centra il dialog
         self.center_window()
         
         # Attendi la chiusura
         self.wait_window()
-    
+
     def init_ui(self):
         """Inizializza l'interfaccia utente"""
         # Frame principale con padding
@@ -76,7 +79,7 @@ class RepeatDialog(tk.Toplevel):
         # Pulsanti per gestire i passi
         ttk.Button(toolbar, text="Aggiungi passo", command=self.add_step).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(toolbar, text="Modifica passo", command=self.edit_step).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text="Elimina passo", command=self.delete_step).pack(side=tk.LEFT, padx=5)
+        ttk.Button(toolbar, text="Elimina passo", command=self.delete_step).pack(side=tk.LEFT, padx=5)  # Corretto il nome del metodo
         ttk.Button(toolbar, text="Sposta su", command=self.move_step_up).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="Sposta giù", command=self.move_step_down).pack(side=tk.LEFT, padx=5)
         
@@ -109,9 +112,6 @@ class RepeatDialog(tk.Toplevel):
         
         # Double-click per modificare
         self.steps_tree.bind("<Double-1>", lambda e: self.edit_step())
-        
-        # Popola la lista con i passi esistenti
-        self.update_steps_tree()
         
         # Esempio di blocco di ripetizione tipico
         example_frame = ttk.LabelFrame(main_frame, text="Esempi comuni")
@@ -156,62 +156,65 @@ class RepeatDialog(tk.Toplevel):
         y = (self.winfo_screenheight() // 2) - (height // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
     
-    def update_steps_tree(self):
-        """Aggiorna la lista dei passi"""
-        # Pulisci la lista attuale
-        for item in self.steps_tree.get_children():
-            self.steps_tree.delete(item)
-        
-        # Aggiungi i passi
-        for i, step in enumerate(self.steps):
-            if isinstance(step, dict) and len(step) == 1:
-                step_type = list(step.keys())[0]
-                step_detail = step[step_type]
-                
-                # Aggiungi alla lista
-                self.steps_tree.insert("", "end", values=(i+1, step_type, step_detail))
-    
     def add_step(self):
         """Aggiunge un nuovo passo"""
-        # Apri il dialog per la definizione del passo
-        dialog = StepDialog(self, sport_type=self.sport_type)
+        # Ottieni la configurazione dal parent se possibile
+        workout_config = None
+        if hasattr(self.parent, "controller") and self.parent.controller:
+            workout_config = self.parent.controller.config.get('workout_config', {})
         
-        # Se confermato, aggiungi il passo
+        # Passa la configurazione a StepDialog
+        dialog = StepDialog(self, sport_type=self.sport_type, workout_config=workout_config)
+        
         if dialog.result:
             step_type, step_detail = dialog.result
-            self.steps.append({step_type: step_detail})
-            self.update_steps_tree()
+            
+            # Aggiungi lo step alla lista
+            if not hasattr(self, 'repeat_steps'):
+                self.repeat_steps = []
+            
+            self.repeat_steps.append({step_type: step_detail})
+            self.load_steps()
     
     def edit_step(self):
-        """Modifica il passo selezionato"""
+        """Edit the selected step"""
         selection = self.steps_tree.selection()
+        
         if not selection:
             messagebox.showwarning("Nessuna selezione", "Seleziona un passo da modificare", parent=self)
             return
         
-        # Ottieni l'indice
-        index = int(self.steps_tree.item(selection[0], "values")[0]) - 1
+        # Get the selected step
+        index = self.steps_tree.index(selection[0])
+        step = self.repeat_steps[index]
         
-        # Ottieni il passo
-        step = self.steps[index]
-        
-        # Controlla il formato
+        # Get step type and detail
         if isinstance(step, dict) and len(step) == 1:
             step_type = list(step.keys())[0]
             step_detail = step[step_type]
             
-            # Apri il dialog con i valori attuali
-            dialog = StepDialog(self, step_type=step_type, step_detail=step_detail, 
-                               sport_type=self.sport_type)
+            # Ottieni la configurazione dal parent se possibile
+            workout_config = None
+            if hasattr(self.parent, "controller") and self.parent.controller:
+                workout_config = self.parent.controller.config.get('workout_config', {})
             
-            # Se confermato, aggiorna il passo
+            # Open the step dialog passing the sport_type and workout_config
+            dialog = StepDialog(self, step_type=step_type, step_detail=step_detail, 
+                               sport_type=self.sport_type, workout_config=workout_config)
+            
             if dialog.result:
                 new_type, new_detail = dialog.result
-                self.steps[index] = {new_type: new_detail}
-                self.update_steps_tree()
+                self.repeat_steps[index] = {new_type: new_detail}
+                self.load_steps()
         else:
-            messagebox.showerror("Errore", "Formato del passo non valido", parent=self)
+            messagebox.showinfo("Formato non supportato", 
+                               "Questo passo ha un formato che non può essere modificato direttamente.\n"
+                               "Ti suggeriamo di eliminarlo e ricrearlo.", parent=self)
     
+    def remove_step(self):
+        """Alias per delete_step per compatibilità"""
+        self.delete_step()
+        
     def delete_step(self):
         """Elimina il passo selezionato"""
         selection = self.steps_tree.selection()
@@ -220,15 +223,15 @@ class RepeatDialog(tk.Toplevel):
             return
         
         # Ottieni l'indice
-        index = int(self.steps_tree.item(selection[0], "values")[0]) - 1
+        index = self.steps_tree.index(selection[0])
         
         # Chiedi conferma
         if messagebox.askyesno("Conferma eliminazione", 
                               "Sei sicuro di voler eliminare questo passo?", 
                               parent=self):
             # Elimina il passo
-            self.steps.pop(index)
-            self.update_steps_tree()
+            self.repeat_steps.pop(index)
+            self.load_steps()
     
     def move_step_up(self):
         """Sposta il passo selezionato verso l'alto"""
@@ -237,17 +240,17 @@ class RepeatDialog(tk.Toplevel):
             return
         
         # Ottieni l'indice
-        index = int(self.steps_tree.item(selection[0], "values")[0]) - 1
+        index = self.steps_tree.index(selection[0])
         
         # Non si può spostare il primo elemento in alto
         if index == 0:
             return
         
         # Scambia gli step
-        self.steps[index], self.steps[index-1] = self.steps[index-1], self.steps[index]
+        self.repeat_steps[index], self.repeat_steps[index-1] = self.repeat_steps[index-1], self.repeat_steps[index]
         
         # Aggiorna la lista
-        self.update_steps_tree()
+        self.load_steps()
         
         # Seleziona lo step spostato
         new_selection = self.steps_tree.get_children()[index-1]
@@ -261,17 +264,17 @@ class RepeatDialog(tk.Toplevel):
             return
         
         # Ottieni l'indice
-        index = int(self.steps_tree.item(selection[0], "values")[0]) - 1
+        index = self.steps_tree.index(selection[0])
         
         # Non si può spostare l'ultimo elemento in basso
-        if index >= len(self.steps) - 1:
+        if index >= len(self.repeat_steps) - 1:
             return
         
         # Scambia gli step
-        self.steps[index], self.steps[index+1] = self.steps[index+1], self.steps[index]
+        self.repeat_steps[index], self.repeat_steps[index+1] = self.repeat_steps[index+1], self.repeat_steps[index]
         
         # Aggiorna la lista
-        self.update_steps_tree()
+        self.load_steps()
         
         # Seleziona lo step spostato
         new_selection = self.steps_tree.get_children()[index+1]
@@ -282,34 +285,34 @@ class RepeatDialog(tk.Toplevel):
         """Aggiunge un esempio predefinito"""
         # Esempi per la corsa
         if example_type == "running_400m":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "400m @ Z4"},
                 {"recovery": "1min @ Z1_HR"}
             ]
         elif example_type == "running_800m":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "800m @ Z3"},
                 {"recovery": "2min @ Z1_HR"}
             ]
         elif example_type == "running_1km":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "1km @ Z4"},
                 {"recovery": "3min @ Z1_HR"}
             ]
         
         # Esempi per il ciclismo
         elif example_type == "cycling_1min":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "1min @spd Z4"},
                 {"recovery": "1min @hr Z1_HR"}
             ]
         elif example_type == "cycling_5min":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "5min @spd Z3"},
                 {"recovery": "2min @hr Z1_HR"}
             ]
         elif example_type == "cycling_interval":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "2min @spd Z5"},
                 {"recovery": "30s @hr Z1_HR"},
                 {"interval": "1min @spd Z4"},
@@ -318,27 +321,31 @@ class RepeatDialog(tk.Toplevel):
         
         # Esempi per il nuoto
         elif example_type == "swimming_100m":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "100m @ Z4"},
                 {"recovery": "30s @ Z1_HR"}
             ]
         elif example_type == "swimming_25m":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "25m @ Z5 -- Sprint"},
                 {"recovery": "15s @ Z1_HR"}
             ]
         elif example_type == "swimming_drill":
-            self.steps = [
+            self.repeat_steps = [
                 {"interval": "50m @ Z2 -- Tecnica"},
                 {"interval": "50m @ Z4 -- Nuotata completa"}
             ]
         
         # Aggiorna la lista
-        self.update_steps_tree()
+        self.load_steps()
     
     def on_ok(self):
         """Gestisce il pulsante OK"""
-        # Valida i dati
+        # Verifica i dati
+        if not self.iterations_var.get():
+            messagebox.showerror("Errore", "Inserisci il numero di ripetizioni", parent=self)
+            return
+        
         try:
             iterations = int(self.iterations_var.get())
             if iterations <= 0:
@@ -347,13 +354,12 @@ class RepeatDialog(tk.Toplevel):
             messagebox.showerror("Errore", "Il numero di ripetizioni deve essere un intero positivo", parent=self)
             return
         
-        # Verifica che ci sia almeno un passo
-        if not self.steps:
-            messagebox.showerror("Errore", "Aggiungi almeno un passo", parent=self)
+        if not hasattr(self, 'repeat_steps') or not self.repeat_steps:
+            messagebox.showerror("Errore", "Aggiungi almeno un passo alla ripetizione", parent=self)
             return
         
         # Imposta il risultato
-        self.result = (iterations, copy.deepcopy(self.steps))
+        self.result = (iterations, self.repeat_steps)
         
         # Chiudi il dialog
         self.destroy()
@@ -361,3 +367,22 @@ class RepeatDialog(tk.Toplevel):
     def on_cancel(self):
         """Gestisce il pulsante Annulla"""
         self.destroy()
+
+    def load_steps(self):
+        """Carica i passi nella treeview"""
+        # Pulisci la lista attuale
+        for item in self.steps_tree.get_children():
+            self.steps_tree.delete(item)
+        
+        # Se non ci sono passi, esci
+        if not hasattr(self, 'repeat_steps') or not self.repeat_steps:
+            return
+        
+        # Aggiungi i passi alla treeview
+        for i, step in enumerate(self.repeat_steps):
+            if isinstance(step, dict) and len(step) == 1:
+                step_type = list(step.keys())[0]
+                step_detail = step[step_type]
+                
+                # Aggiungi alla treeview
+                self.steps_tree.insert("", "end", values=(i+1, step_type, step_detail))
