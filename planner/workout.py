@@ -1,5 +1,7 @@
 SPORT_TYPES = {
     "running": 1,
+    "cycling": 2,
+    "swimming": 4,
 }
 
 STEP_TYPES = {"warmup": 1, "cooldown": 2, "interval": 3, "recovery": 4, "rest": 5, "repeat":6, "other": 7}

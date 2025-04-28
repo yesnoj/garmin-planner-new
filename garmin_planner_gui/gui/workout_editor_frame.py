@@ -1288,6 +1288,15 @@ class WorkoutEditorFrame(ttk.Frame):
                     elif 'date' not in step:  # Salta anche i passi di tipo date
                         actual_steps.append(step)
             
+            # Verifica se il tipo di sport è supportato
+            from planner.workout import SPORT_TYPES
+            if sport_type not in SPORT_TYPES:
+                logging.error(f"Tipo di sport '{sport_type}' non supportato")
+                show_warning("Sport non supportato", 
+                          f"Il tipo di sport '{sport_type}' non è supportato per l'esportazione su Garmin Connect.", 
+                          parent=self)
+                return
+            
             # Crea il workout
             from planner.workout import Workout
             workout = Workout(sport_type, name)
@@ -1657,19 +1666,51 @@ class WorkoutEditorFrame(ttk.Frame):
                         hr_parts = hr_value.split('-')
                         if len(hr_parts) == 2:
                             try:
-                                low_hr = int(hr_parts[0])
-                                high_hr = int(hr_parts[1])
-                                return Target('heart.rate.zone', low_hr, high_hr)
+                                # Verifica se contiene percentuali o max_hr
+                                if "%" in hr_parts[1]:
+                                    # Esempio: 62-76% max_hr
+                                    max_hr = heart_rates.get('max_hr', 180)
+                                    
+                                    # Estrai i valori percentuali
+                                    match1 = re.search(r'(\d+)', hr_parts[0])
+                                    match2 = re.search(r'(\d+)', hr_parts[1])
+                                    
+                                    if match1 and match2:
+                                        low_percent = int(match1.group(1))
+                                        high_percent = int(match2.group(1))
+                                        
+                                        # Calcola i valori BPM
+                                        low_hr = int((low_percent / 100) * max_hr)
+                                        high_hr = int((high_percent / 100) * max_hr)
+                                        
+                                        return Target('heart.rate.zone', low_hr, high_hr)
+                                else:
+                                    # Intervallo semplice (es. "140-160")
+                                    low_hr = int(hr_parts[0])
+                                    high_hr = int(hr_parts[1])
+                                    return Target('heart.rate.zone', low_hr, high_hr)
                             except Exception as e:
                                 logging.warning(f"Errore nella conversione della FC '{hr_value}': {str(e)}")
-                    
+                        
                     # Formato singolo valore
                     try:
                         hr = int(hr_value)
                         # Aggiungi margini di ±5 bpm
                         return Target('heart.rate.zone', hr - 5, hr + 5)
                     except Exception as e:
-                        logging.warning(f"Errore nella conversione della FC '{hr_value}': {str(e)}")
+                        # Verifica se è un valore percentuale
+                        if isinstance(hr_value, str) and "%" in hr_value:
+                            try:
+                                max_hr = heart_rates.get('max_hr', 180)
+                                match = re.search(r'(\d+)', hr_value)
+                                if match:
+                                    percent = int(match.group(1))
+                                    hr = int((percent / 100) * max_hr)
+                                    return Target('heart.rate.zone', hr - 5, hr + 5)
+                            except Exception as e2:
+                                logging.warning(f"Errore nella conversione della FC percentuale '{hr_value}': {str(e2)}")
+                        else:
+                            logging.warning(f"Errore nella conversione della FC '{hr_value}': {str(e)}")
                 
                 # Prova come zona numerica
                 elif re.match(r'^Z\d+_HR$', zone):
