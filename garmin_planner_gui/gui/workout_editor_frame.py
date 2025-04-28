@@ -173,7 +173,7 @@ class WorkoutEditorFrame(ttk.Frame):
         # Crea la treeview per la lista
         columns = ("name", "sport", "date", "steps")
         self.workout_tree = ttk.Treeview(list_container, columns=columns, show="headings", 
-                                       selectmode="browse")
+                                       selectmode="extended")  # Cambiato da "browse" a "extended" per consentire selezioni multiple
         
         # Definisci le intestazioni
         self.workout_tree.heading("name", text="Nome")
@@ -219,6 +219,8 @@ class WorkoutEditorFrame(ttk.Frame):
         # Pulsante per aggiornare la lista
         refresh_button = ttk.Button(button_frame, text="Aggiorna", command=self.refresh_workout_list)
         refresh_button.pack(side=tk.RIGHT)
+
+
     
     def create_workout_editor(self, parent):
         """Crea l'editor per l'allenamento selezionato"""
@@ -484,14 +486,23 @@ class WorkoutEditorFrame(ttk.Frame):
         if not selection:
             return
         
-        # Ottieni l'indice
-        index = self.workout_tree.index(selection[0])
-        
-        # Ottieni l'allenamento
-        name, steps = self.workouts[index]
-        
-        # Aggiorna l'editor
-        self.load_workout(name, steps)
+        # Se è selezionato solo un elemento, caricalo nell'editor
+        if len(selection) == 1:
+            # Ottieni l'indice
+            index = self.workout_tree.index(selection[0])
+            
+            # Ottieni l'allenamento
+            name, steps = self.workouts[index]
+            
+            # Aggiorna l'editor
+            self.load_workout(name, steps)
+        else:
+            # Se sono selezionati più elementi, disabilita l'editor
+            self.clear_editor()
+            self.disable_editor()
+            
+            # Aggiorna lo stato per indicare quanti allenamenti sono selezionati
+            self.status_var.set(f"{len(selection)} allenamenti selezionati")
     
     def on_workout_double_click(self, event):
         """Gestisce il doppio click su un allenamento"""
@@ -1095,7 +1106,7 @@ class WorkoutEditorFrame(ttk.Frame):
         ttk.Radiobutton(sync_dialog, text="Carica tutti gli allenamenti su Garmin Connect", 
                        variable=sync_var, value=1).pack(anchor=tk.W, padx=20, pady=5)
         
-        ttk.Radiobutton(sync_dialog, text="Carica solo l'allenamento selezionato", 
+        ttk.Radiobutton(sync_dialog, text="Carica solo gli allenamenti selezionati", 
                        variable=sync_var, value=2).pack(anchor=tk.W, padx=20, pady=5)
         
         ttk.Radiobutton(sync_dialog, text="Scarica allenamenti da Garmin Connect", 
@@ -1106,16 +1117,22 @@ class WorkoutEditorFrame(ttk.Frame):
         ttk.Checkbutton(sync_dialog, text="Sovrascrivi allenamenti esistenti con lo stesso nome", 
                        variable=replace_var).pack(anchor=tk.W, padx=20, pady=10)
         
+        # Flag per pianificazione
+        schedule_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(sync_dialog, text="Pianifica gli allenamenti nelle date specificate", 
+                       variable=schedule_var).pack(anchor=tk.W, padx=20, pady=5)
+        
         # Pulsanti
         button_frame = ttk.Frame(sync_dialog)
         button_frame.pack(fill=tk.X, padx=20, pady=20)
         
         # Variabile per il risultato
-        result = {"action": None, "replace": False}
+        result = {"action": None, "replace": False, "schedule": False}
         
         def on_ok():
             result["action"] = sync_var.get()
             result["replace"] = replace_var.get()
+            result["schedule"] = schedule_var.get()
             sync_dialog.destroy()
         
         def on_cancel():
@@ -1137,11 +1154,12 @@ class WorkoutEditorFrame(ttk.Frame):
             # Carica tutti gli allenamenti
             self.upload_all_workouts(result["replace"])
         elif result["action"] == 2:
-            # Carica solo l'allenamento selezionato
+            # Carica solo gli allenamenti selezionati
             self.upload_selected_workout(result["replace"])
         elif result["action"] == 3:
             # Scarica allenamenti
             self.download_workouts()
+
         
     def upload_all_workouts(self, replace=False):
         """Carica tutti gli allenamenti su Garmin Connect"""
@@ -1173,11 +1191,12 @@ class WorkoutEditorFrame(ttk.Frame):
         # Conta i successi/errori
         success_count = 0
         error_count = 0
+        scheduled_count = 0
         
         # Crea una finestra di progresso
         progress_window = tk.Toplevel(self)
         progress_window.title("Caricamento in corso")
-        progress_window.geometry("400x150")
+        progress_window.geometry("400x170")
         progress_window.transient(self)
         progress_window.grab_set()
         
@@ -1187,8 +1206,13 @@ class WorkoutEditorFrame(ttk.Frame):
         status_label.pack(pady=(20, 10))
         
         # Barra di progresso
-        progress = ttk.Progressbar(progress_window, mode='determinate', length=300, maximum=len(self.workouts))
+        progress = ttk.Progressbar(progress_window, mode='determinate', length=350, maximum=len(self.workouts))
         progress.pack(pady=10)
+        
+        # Label per il messaggio di pianificazione
+        schedule_status_var = tk.StringVar(value="")
+        schedule_label = ttk.Label(progress_window, textvariable=schedule_status_var)
+        schedule_label.pack(pady=5)
         
         # Aggiorna la finestra
         progress_window.update()
@@ -1202,6 +1226,7 @@ class WorkoutEditorFrame(ttk.Frame):
                 
                 # Estrai il tipo di sport dagli step
                 sport_type = "running"  # Default
+                workout_date = None
                 
                 # Estrai metadati e passi effettivi
                 actual_steps = []
@@ -1210,8 +1235,17 @@ class WorkoutEditorFrame(ttk.Frame):
                     if isinstance(step, dict):
                         if 'sport_type' in step:
                             sport_type = step['sport_type']
-                        elif 'date' not in step:  # Salta anche i passi di tipo date
+                        elif 'date' in step:
+                            workout_date = step['date']
+                        else:
                             actual_steps.append(step)
+                
+                # Verifica se il tipo di sport è supportato
+                from planner.workout import SPORT_TYPES
+                if sport_type not in SPORT_TYPES:
+                    logging.error(f"Tipo di sport '{sport_type}' non supportato")
+                    error_count += 1
+                    continue
                 
                 # Crea il workout
                 workout = Workout(sport_type, name)
@@ -1219,13 +1253,37 @@ class WorkoutEditorFrame(ttk.Frame):
                 # Converti i passi
                 self.convert_steps_to_workout(workout, actual_steps)
                 
-                # Verifica se esiste già
+                # ID dell'allenamento su Garmin (sarà impostato dopo il caricamento)
+                workout_id = None
+                
+                # Carica o aggiorna l'allenamento
                 if name in existing_map and replace:
                     # Aggiorna l'allenamento esistente
-                    self.garmin_client.update_workout(existing_map[name], workout)
+                    workout_id = existing_map[name]
+                    self.garmin_client.update_workout(workout_id, workout)
                 else:
                     # Crea un nuovo allenamento
-                    self.garmin_client.add_workout(workout)
+                    response = self.garmin_client.add_workout(workout)
+                    # Estrai l'ID dal nuovo allenamento creato
+                    if response and "workoutId" in response:
+                        workout_id = response["workoutId"]
+                
+                # Pianifica l'allenamento se è stata specificata una data
+                if workout_date and workout_id:
+                    try:
+                        schedule_status_var.set(f"Pianificazione di '{name}' per il {workout_date}...")
+                        progress_window.update()
+                        
+                        # Pianifica l'allenamento
+                        self.garmin_client.schedule_workout(workout_id, workout_date)
+                        scheduled_count += 1
+                        
+                        schedule_status_var.set(f"Pianificato '{name}' per il {workout_date}")
+                        progress_window.update()
+                    except Exception as sch_err:
+                        logging.error(f"Errore nella pianificazione dell'allenamento '{name}': {str(sch_err)}")
+                        schedule_status_var.set(f"Errore nella pianificazione di '{name}'")
+                        progress_window.update()
                 
                 success_count += 1
                 
@@ -1237,91 +1295,181 @@ class WorkoutEditorFrame(ttk.Frame):
         progress_window.destroy()
         
         # Mostra il risultato
+        result_msg = f"Caricati {success_count} allenamenti su Garmin Connect."
+        if scheduled_count > 0:
+            result_msg += f"\nPianificati {scheduled_count} allenamenti nelle date specificate."
+        
         if error_count == 0:
-            show_info("Completato", f"Caricati {success_count} allenamenti su Garmin Connect.", parent=self)
+            show_info("Completato", result_msg, parent=self)
         else:
             show_warning("Completato con errori", 
-                       f"Caricati {success_count} allenamenti su Garmin Connect.\n"
-                       f"Si sono verificati {error_count} errori. Controlla il log per i dettagli.", 
+                       f"{result_msg}\nSi sono verificati {error_count} errori. Controlla il log per i dettagli.", 
                        parent=self)
     
     def upload_selected_workout(self, replace=False):
         """Carica l'allenamento selezionato su Garmin Connect"""
         selection = self.workout_tree.selection()
         if not selection:
-            show_warning("Nessuna selezione", "Seleziona un allenamento da caricare", parent=self)
+            show_warning("Nessuna selezione", "Seleziona uno o più allenamenti da caricare", parent=self)
             return
         
-        # Ottieni l'indice
-        index = self.workout_tree.index(selection[0])
+        # Creare una lista di indici
+        indices = [self.workout_tree.index(item) for item in selection]
         
-        # Ottieni l'allenamento
-        name, steps = self.workouts[index]
+        # Conferma di caricamento
+        msg = f"Stai per caricare {len(indices)} allenamento/i su Garmin Connect."
+        if len(indices) > 3:
+            # Mostra solo i primi 3 nomi, poi "e altri..."
+            names = [self.workouts[idx][0] for idx in indices[:3]]
+            msg += f"\n- {names[0]}"
+            for name in names[1:]:
+                msg += f"\n- {name}"
+            msg += f"\n- e altri {len(indices) - 3} allenamenti..."
+        else:
+            # Mostra tutti i nomi
+            names = [self.workouts[idx][0] for idx in indices]
+            for name in names:
+                msg += f"\n- {name}"
         
-        # Conferma
-        if not ask_yes_no("Conferma", 
-                        f"Stai per caricare l'allenamento '{name}' su Garmin Connect. Continuare?", 
-                        parent=self):
+        msg += "\n\nContinuare?"
+        
+        if not ask_yes_no("Conferma", msg, parent=self):
             return
         
+        # Ottieni la lista degli allenamenti esistenti su Garmin Connect
         try:
-            # Ottieni la lista degli allenamenti esistenti su Garmin Connect
             existing_workouts = self.garmin_client.list_workouts()
-            
-            # Verifica se esiste già
-            existing_id = None
-            for workout in existing_workouts:
-                if workout["workoutName"] == name:
-                    existing_id = workout["workoutId"]
-                    break
-            
-            # Estrai il tipo di sport dagli step
-            sport_type = "running"  # Default
-            
-            # Estrai metadati e passi effettivi
-            actual_steps = []
-            
-            for step in steps:
-                if isinstance(step, dict):
-                    if 'sport_type' in step:
-                        sport_type = step['sport_type']
-                    elif 'date' not in step:  # Salta anche i passi di tipo date
-                        actual_steps.append(step)
-            
-            # Verifica se il tipo di sport è supportato
-            from planner.workout import SPORT_TYPES
-            if sport_type not in SPORT_TYPES:
-                logging.error(f"Tipo di sport '{sport_type}' non supportato")
-                show_warning("Sport non supportato", 
-                          f"Il tipo di sport '{sport_type}' non è supportato per l'esportazione su Garmin Connect.", 
-                          parent=self)
-                return
-            
-            # Crea il workout
-            from planner.workout import Workout
-            workout = Workout(sport_type, name)
-            
-            # Converti i passi
-            self.convert_steps_to_workout(workout, actual_steps)
-            
-            # Carica o aggiorna l'allenamento
-            if existing_id and replace:
-                # Aggiorna l'allenamento esistente
-                self.garmin_client.update_workout(existing_id, workout)
-                show_info("Completato", 
-                        f"Allenamento '{name}' aggiornato su Garmin Connect.", 
-                        parent=self)
-            else:
-                # Crea un nuovo allenamento
-                response = self.garmin_client.add_workout(workout)
-                show_info("Completato", 
-                        f"Allenamento '{name}' caricato su Garmin Connect.", 
-                        parent=self)
-        
         except Exception as e:
-            show_error("Errore", 
-                     f"Impossibile caricare l'allenamento: {str(e)}", 
-                     parent=self)
+            show_error("Errore", f"Impossibile ottenere la lista degli allenamenti: {str(e)}", parent=self)
+            return
+        
+        # Crea un dizionario nome -> id per gli allenamenti esistenti
+        existing_map = {}
+        for workout in existing_workouts:
+            existing_map[workout["workoutName"]] = workout["workoutId"]
+        
+        # Crea una finestra di progresso
+        progress_window = tk.Toplevel(self)
+        progress_window.title("Caricamento in corso")
+        progress_window.geometry("400x170")
+        progress_window.transient(self)
+        progress_window.grab_set()
+        
+        # Label per lo stato
+        status_var = tk.StringVar(value="Caricamento in corso...")
+        status_label = ttk.Label(progress_window, textvariable=status_var)
+        status_label.pack(pady=(20, 10))
+        
+        # Barra di progresso
+        progress = ttk.Progressbar(progress_window, mode='determinate', length=350, maximum=len(indices))
+        progress.pack(pady=10)
+        
+        # Label per il messaggio di pianificazione
+        schedule_status_var = tk.StringVar(value="")
+        schedule_label = ttk.Label(progress_window, textvariable=schedule_status_var)
+        schedule_label.pack(pady=5)
+        
+        # Aggiorna la finestra
+        progress_window.update()
+        
+        # Conta successi/errori
+        success_count = 0
+        error_count = 0
+        scheduled_count = 0
+        
+        # Per ogni allenamento selezionato
+        for idx, index in enumerate(indices):
+            name, steps = self.workouts[index]
+            
+            # Aggiorna lo stato
+            status_var.set(f"Caricamento {idx+1}/{len(indices)}: {name}")
+            progress['value'] = idx
+            progress_window.update()
+            
+            try:
+                # Estrai il tipo di sport dagli step
+                sport_type = "running"  # Default
+                workout_date = None
+                
+                # Estrai metadati e passi effettivi
+                actual_steps = []
+                
+                for step in steps:
+                    if isinstance(step, dict):
+                        if 'sport_type' in step:
+                            sport_type = step['sport_type']
+                        elif 'date' in step:
+                            workout_date = step['date']
+                        else:
+                            actual_steps.append(step)
+                
+                # Verifica se il tipo di sport è supportato
+                from planner.workout import SPORT_TYPES
+                if sport_type not in SPORT_TYPES:
+                    logging.error(f"Tipo di sport '{sport_type}' non supportato")
+                    error_count += 1
+                    continue
+                
+                # Crea il workout
+                from planner.workout import Workout
+                workout = Workout(sport_type, name)
+                
+                # Converti i passi
+                self.convert_steps_to_workout(workout, actual_steps)
+                
+                # ID dell'allenamento su Garmin (sarà impostato dopo il caricamento)
+                workout_id = None
+                
+                # Carica o aggiorna l'allenamento
+                if name in existing_map and replace:
+                    # Aggiorna l'allenamento esistente
+                    workout_id = existing_map[name]
+                    self.garmin_client.update_workout(workout_id, workout)
+                else:
+                    # Crea un nuovo allenamento
+                    response = self.garmin_client.add_workout(workout)
+                    # Estrai l'ID dal nuovo allenamento creato
+                    if response and "workoutId" in response:
+                        workout_id = response["workoutId"]
+                
+                # Pianifica l'allenamento se è stata specificata una data
+                if workout_date and workout_id:
+                    try:
+                        schedule_status_var.set(f"Pianificazione di '{name}' per il {workout_date}...")
+                        progress_window.update()
+                        
+                        # Pianifica l'allenamento
+                        self.garmin_client.schedule_workout(workout_id, workout_date)
+                        scheduled_count += 1
+                        
+                        schedule_status_var.set(f"Pianificato '{name}' per il {workout_date}")
+                        progress_window.update()
+                    except Exception as sch_err:
+                        logging.error(f"Errore nella pianificazione dell'allenamento '{name}': {str(sch_err)}")
+                        schedule_status_var.set(f"Errore nella pianificazione di '{name}'")
+                        progress_window.update()
+                
+                success_count += 1
+                
+            except Exception as e:
+                logging.error(f"Errore nel caricamento dell'allenamento '{name}': {str(e)}")
+                error_count += 1
+        
+        # Chiudi la finestra di progresso
+        progress_window.destroy()
+        
+        # Mostra il risultato
+        result_msg = f"Caricati {success_count} allenamenti su Garmin Connect."
+        if scheduled_count > 0:
+            result_msg += f"\nPianificati {scheduled_count} allenamenti nelle date specificate."
+        
+        if error_count == 0:
+            show_info("Completato", result_msg, parent=self)
+        else:
+            show_warning("Completato con errori", 
+                       f"{result_msg}\nSi sono verificati {error_count} errori. Controlla il log per i dettagli.", 
+                       parent=self)
+
     
     def convert_steps_to_workout(self, workout, steps):
         """Converte la lista di passi in un oggetto Workout"""

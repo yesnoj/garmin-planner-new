@@ -706,6 +706,9 @@ class ImportExportFrame(ttk.Frame):
                     with open(filename, 'r', encoding='utf-8') as f:
                         data = json.load(f)
             
+            # Lista delle chiavi speciali che non sono allenamenti
+            config_keys = ['config', 'athlete_name', 'paces', 'power_values', 'swim_paces', 'speeds', 'heart_rates']
+            
             # Estrai la configurazione se presente
             if 'config' in data:
                 # Aggiorna la configurazione
@@ -726,14 +729,36 @@ class ImportExportFrame(ttk.Frame):
                             self.controller.config['workout_config'][section][key] = value
                 
                 # Altri parametri
-                for param in ['name_prefix', 'sport_type']:
+                for param in ['name_prefix', 'sport_type', 'athlete_name']:
                     if param in new_config:
                         self.controller.config['workout_config'][param] = new_config[param]
                 
                 self.write_log("Configurazione aggiornata")
             
+            # Estrai athlete_name se presente nella radice
+            if 'athlete_name' in data:
+                athlete_name = data.pop('athlete_name')
+                # Aggiorna il nome dell'atleta nella configurazione principale
+                self.controller.config['athlete_name'] = athlete_name
+                # E anche in workout_config per mantenere la coerenza
+                if 'workout_config' not in self.controller.config:
+                    self.controller.config['workout_config'] = {}
+                self.controller.config['workout_config']['athlete_name'] = athlete_name
+                self.write_log(f"Nome atleta aggiornato: {athlete_name}")
+            
+            # Estrai direttamente le sezioni di configurazione dalla radice e aggiornale
+            for config_section in ['paces', 'power_values', 'swim_paces', 'speeds', 'heart_rates']:
+                if config_section in data:
+                    section_data = data.pop(config_section)
+                    # Assicurati che workout_config esista
+                    if 'workout_config' not in self.controller.config:
+                        self.controller.config['workout_config'] = {}
+                    # Aggiorna la sezione
+                    self.controller.config['workout_config'][config_section] = section_data
+                    self.write_log(f"Sezione {config_section} aggiornata")
+            
             # Conta gli allenamenti
-            total_workouts = len(data)
+            total_workouts = sum(1 for name in data.keys() if name not in config_keys)
             imported_workouts = 0
             skipped_workouts = 0
             
@@ -743,6 +768,10 @@ class ImportExportFrame(ttk.Frame):
             
             # Importa gli allenamenti
             for name, steps in data.items():
+                # Salta le chiavi di configurazione
+                if name in config_keys:
+                    continue
+                    
                 # Filtra per nome
                 if filter_name and not re.search(filter_name, name, re.IGNORECASE):
                     skipped_workouts += 1
