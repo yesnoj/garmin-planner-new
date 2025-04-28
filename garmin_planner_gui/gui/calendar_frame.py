@@ -165,7 +165,7 @@ class CalendarFrame(ttk.Frame):
         # Crea il treeview
         columns = ("name", "sport", "date")
         self.workouts_tree = ttk.Treeview(list_frame, columns=columns, show="headings", 
-                                        selectmode="browse")
+                                        selectmode="extended")
         
         # Intestazioni
         self.workouts_tree.heading("name", text="Nome")
@@ -923,51 +923,140 @@ class CalendarFrame(ttk.Frame):
 
 
     def delete_workout(self):
-        """Elimina un allenamento da Garmin Connect"""
-        # Verifica che sia selezionato un allenamento
+        """Elimina uno o più allenamenti da Garmin Connect"""
+        # Verifica che sia selezionato almeno un allenamento
         selection = self.workouts_tree.selection()
         if not selection:
             messagebox.showwarning("Nessuna selezione", 
-                                 "Seleziona un allenamento da eliminare", 
+                                 "Seleziona almeno un allenamento da eliminare", 
                                  parent=self)
             return
         
-        # Ottieni l'allenamento
-        item = selection[0]
-        values = self.workouts_tree.item(item, "values")
-        name = values[0]
-        workout_id = self.workouts_tree.item(item, "tags")[0]
-        
-        # Chiedi conferma
-        if not messagebox.askyesno("Conferma eliminazione", 
-                                f"Sei sicuro di voler eliminare l'allenamento '{name}' da Garmin Connect?", 
-                                parent=self):
-            return
-        
-        try:
-            # Elimina l'allenamento
-            if self.garmin_client:
-                self.garmin_client.delete_workout(workout_id)
-                
-                # Aggiorna la lista
-                self.fetch_available_workouts()
-                
-                # Aggiorna anche gli allenamenti pianificati poiché l'eliminazione 
-                # potrebbe aver rimosso anche le pianificazioni
-                self.fetch_scheduled_workouts()
-                
-                # Ridisegna il calendario
-                self.draw_calendar()
-                
-                # Mostra messaggio di conferma
-                messagebox.showinfo("Operazione completata", 
-                                    f"Allenamento '{name}' eliminato da Garmin Connect", 
-                                    parent=self)
-            else:
+        # Se c'è un solo elemento selezionato
+        if len(selection) == 1:
+            # Ottieni l'allenamento
+            item = selection[0]
+            values = self.workouts_tree.item(item, "values")
+            name = values[0]
+            workout_id = self.workouts_tree.item(item, "tags")[0]
+            
+            # Chiedi conferma
+            if not messagebox.askyesno("Conferma eliminazione", 
+                                    f"Sei sicuro di voler eliminare l'allenamento '{name}' da Garmin Connect?", 
+                                    parent=self):
+                return
+            
+            try:
+                # Elimina l'allenamento
+                if self.garmin_client:
+                    self.garmin_client.delete_workout(workout_id)
+                    
+                    # Aggiorna la lista
+                    self.fetch_available_workouts()
+                    
+                    # Aggiorna anche gli allenamenti pianificati poiché l'eliminazione 
+                    # potrebbe aver rimosso anche le pianificazioni
+                    self.fetch_scheduled_workouts()
+                    
+                    # Ridisegna il calendario
+                    self.draw_calendar()
+                    
+                    # Mostra messaggio di conferma
+                    messagebox.showinfo("Operazione completata", 
+                                        f"Allenamento '{name}' eliminato da Garmin Connect", 
+                                        parent=self)
+                else:
+                    messagebox.showerror("Errore", 
+                                        "Devi essere connesso a Garmin Connect", 
+                                        parent=self)
+            except Exception as e:
                 messagebox.showerror("Errore", 
-                                    "Devi essere connesso a Garmin Connect", 
+                                    f"Impossibile eliminare l'allenamento: {str(e)}", 
                                     parent=self)
-        except Exception as e:
-            messagebox.showerror("Errore", 
-                                f"Impossibile eliminare l'allenamento: {str(e)}", 
-                                parent=self)
+        
+        # Se ci sono più elementi selezionati
+        else:
+            # Ottieni i nomi degli allenamenti
+            workout_names = []
+            workout_ids = []
+            for item in selection:
+                values = self.workouts_tree.item(item, "values")
+                name = values[0]
+                workout_id = self.workouts_tree.item(item, "tags")[0]
+                workout_names.append(name)
+                workout_ids.append(workout_id)
+            
+            # Chiedi conferma
+            if not messagebox.askyesno("Conferma eliminazione multipla", 
+                                    f"Sei sicuro di voler eliminare {len(workout_names)} allenamenti selezionati da Garmin Connect?", 
+                                    parent=self):
+                return
+            
+            # Elimina gli allenamenti
+            success_count = 0
+            error_count = 0
+            
+            # Crea una finestra di progresso
+            progress = tk.Toplevel(self)
+            progress.title("Eliminazione in corso")
+            progress.geometry("400x150")
+            progress.transient(self)
+            progress.grab_set()
+            
+            # Etichetta
+            status_var = tk.StringVar(value="Eliminazione in corso...")
+            status_label = ttk.Label(progress, textvariable=status_var)
+            status_label.pack(pady=(20, 10))
+            
+            # Barra di progresso
+            progressbar = ttk.Progressbar(progress, mode='determinate', length=300, maximum=len(workout_ids))
+            progressbar.pack(pady=10)
+            
+            # Aggiorna la finestra
+            progress.update()
+            
+            try:
+                if self.garmin_client:
+                    for i, (name, workout_id) in enumerate(zip(workout_names, workout_ids)):
+                        try:
+                            # Aggiorna lo stato
+                            status_var.set(f"Eliminazione {i+1}/{len(workout_ids)}: {name}")
+                            progressbar['value'] = i
+                            progress.update()
+                            
+                            # Elimina l'allenamento
+                            self.garmin_client.delete_workout(workout_id)
+                            success_count += 1
+                        except Exception as e:
+                            error_count += 1
+                            logging.error(f"Errore nell'eliminazione di '{name}': {str(e)}")
+                    
+                    # Aggiorna la lista
+                    self.fetch_available_workouts()
+                    
+                    # Aggiorna anche gli allenamenti pianificati
+                    self.fetch_scheduled_workouts()
+                    
+                    # Ridisegna il calendario
+                    self.draw_calendar()
+                    
+                    # Mostra messaggio di conferma
+                    messagebox.showinfo("Operazione completata", 
+                                       f"Eliminati {success_count} allenamenti.\n"
+                                       f"Errori: {error_count}", 
+                                       parent=self)
+                else:
+                    progress.destroy()
+                    messagebox.showerror("Errore", 
+                                        "Devi essere connesso a Garmin Connect", 
+                                        parent=self)
+                    return
+            except Exception as e:
+                progress.destroy()
+                messagebox.showerror("Errore", 
+                                    f"Impossibile eliminare gli allenamenti: {str(e)}", 
+                                    parent=self)
+                return
+            
+            # Chiudi la finestra di progresso
+            progress.destroy()
