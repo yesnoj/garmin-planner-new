@@ -181,25 +181,51 @@ class LoginFrame(ttk.Frame):
             from planner.garmin_client import GarminClient
             import garth
             
-            # Prova a effettuare il login
-            garth.login(email, password)
+            # Logga l'inizio del tentativo di login
+            logging.info(f"Tentativo di login per l'utente: {email}")
+            
+            try:
+                # Prova a effettuare il login
+                garth.login(email, password)
+            except Exception as auth_err:
+                logging.error(f"Errore di autenticazione: {str(auth_err)}")
+                self.controller.after(0, self._login_failed, f"Errore di autenticazione: credenziali non valide o servizio non disponibile. Dettagli: {str(auth_err)}")
+                return
             
             # Salva il token se richiesto
             if self.save_creds_var.get():
-                garth.save(oauth_folder)
+                try:
+                    garth.save(oauth_folder)
+                    logging.info(f"Token OAuth salvato in {oauth_folder}")
+                except Exception as save_err:
+                    logging.warning(f"Impossibile salvare il token OAuth: {str(save_err)}")
+                    # Continuiamo comunque con il login
             
             # Crea il client
-            client = GarminClient(oauth_folder)
+            try:
+                client = GarminClient(oauth_folder)
+            except Exception as client_err:
+                logging.error(f"Errore nella creazione del client Garmin: {str(client_err)}")
+                self.controller.after(0, self._login_failed, f"Errore nella creazione del client Garmin: {str(client_err)}")
+                return
             
             # Verifica che il client funzioni
-            _ = client.list_workouts()
+            try:
+                _ = client.list_workouts()
+                logging.info("Connessione a Garmin Connect verificata con successo")
+            except Exception as api_err:
+                logging.error(f"Errore nell'accesso alle API di Garmin: {str(api_err)}")
+                self.controller.after(0, self._login_failed, f"Errore nell'accesso alle API di Garmin: {str(api_err)}")
+                return
             
             # Login riuscito
+            logging.info("Login completato con successo")
             self.controller.after(0, self._login_success, client)
             
         except Exception as e:
-            # Login fallito
-            self.controller.after(0, self._login_failed, str(e))
+            # Errore generico
+            logging.error(f"Errore imprevisto durante il login: {str(e)}")
+            self.controller.after(0, self._login_failed, f"Errore imprevisto: {str(e)}")
     
     def _login_success(self, client):
         """Callback per il login riuscito"""

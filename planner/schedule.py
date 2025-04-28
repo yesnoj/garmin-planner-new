@@ -50,13 +50,16 @@ def cmd_schedule_workouts(args):
         saturday = (week_monday + datetime.timedelta(days=+5)).strftime('%Y-%m-%d')
         sunday = (week_monday + datetime.timedelta(days=+6)).strftime('%Y-%m-%d')
         sorted_plan = dict(sorted(plan.items()))
-        plan_sessions = list(sorted_plan.keys())[-1]
+        plan_sessions = len(sorted_plan.keys())
         week_monday = first_monday + datetime.timedelta(weeks=+(week_nb-1))
-        if plan_sessions == 2:
+        
+        if plan_sessions == 1:
+            # Per una sola sessione, la mettiamo di sabato
             scheduled_plan[saturday] = plan.get(1, None)
         elif plan_sessions == 2:
+            # Per due sessioni, le mettiamo di mercoledì e domenica
             scheduled_plan[wednesday] = plan.get(1, None)
-            scheduled_plan[sunday] = plan.get(1, None)
+            scheduled_plan[sunday] = plan.get(2, None)
         elif plan_sessions == 3:
             scheduled_plan[tuesday] = plan.get(1, None)
             scheduled_plan[thursday] = plan.get(2, None)

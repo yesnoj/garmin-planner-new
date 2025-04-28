@@ -18,7 +18,7 @@ from .styles import COLORS, STEP_ICONS, SPORT_ICONS
 from .workout_step_dialog import StepDialog
 from .repeat_dialog import RepeatDialog
 from .workout_config_dialog import WorkoutConfigDialog
-from gui.utils import (
+from garmin_planner_gui.gui.utils import (
     show_error, show_warning, show_info, ask_yes_no,
     format_workout_name, parse_workout_name
 )
@@ -1015,9 +1015,6 @@ class WorkoutEditorFrame(ttk.Frame):
             show_error("Errore", "Devi essere connesso a Garmin Connect", parent=self)
             return
         
-        # Chiedi cosa sincronizzare
-        from tkinter import simpledialog
-        
         # Crea un dialog personalizzato
         sync_dialog = tk.Toplevel(self)
         sync_dialog.title("Sincronizza con Garmin Connect")
@@ -1081,7 +1078,7 @@ class WorkoutEditorFrame(ttk.Frame):
         elif result["action"] == 3:
             # Scarica allenamenti
             self.download_workouts()
-    
+        
     def upload_all_workouts(self, replace=False):
         """Carica tutti gli allenamenti su Garmin Connect"""
         if not self.workouts:
@@ -1255,6 +1252,7 @@ class WorkoutEditorFrame(ttk.Frame):
     
     def convert_steps_to_workout(self, workout, steps):
         """Converte la lista di passi in un oggetto Workout"""
+        # Implementazione corretta e completa
         from planner.workout import WorkoutStep, Target
         
         for step in steps:

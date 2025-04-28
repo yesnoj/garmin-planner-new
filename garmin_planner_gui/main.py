@@ -132,16 +132,50 @@ class GarminPlannerApp(tk.Tk):
         oauth_dir = self.config.get('oauth_folder', '~/.garth')
         oauth_dir = os.path.expanduser(oauth_dir)
         
-        if os.path.exists(oauth_dir):
+        if not os.path.exists(oauth_dir):
+            logging.info(f"Directory OAuth non trovata: {oauth_dir}")
+            return
+            
+        # Verifica se esistono i file di token
+        token_file = os.path.join(oauth_dir, 'oauth2_token.json')
+        if not os.path.exists(token_file):
+            logging.info(f"File token OAuth non trovato: {token_file}")
+            return
+            
+        try:
+            logging.info(f"Tentativo di login automatico utilizzando il token in: {oauth_dir}")
+            
+            # Importa in modo sicuro
             try:
                 from planner.garmin_client import GarminClient
-                self.garmin_client = GarminClient(oauth_dir)
-                # Verifica se il client è valido tentando una richiesta
-                _ = self.garmin_client.list_workouts()
-                self.logged_in = True
-                self.update_login_status("Connesso a Garmin Connect")
+            except ImportError as imp_err:
+                logging.error(f"Errore nell'importazione del modulo GarminClient: {str(imp_err)}")
+                return
                 
-                # IMPORTANTE: Aggiorna tutti i frame con il client
+            # Crea il client
+            try:
+                self.garmin_client = GarminClient(oauth_dir)
+            except Exception as client_err:
+                logging.error(f"Errore nella creazione del client Garmin: {str(client_err)}")
+                self.login_frame.show_login_error(f"Impossibile creare il client Garmin: {str(client_err)}")
+                return
+            
+            # Verifica se il client è valido tentando una richiesta
+            try:
+                _ = self.garmin_client.list_workouts()
+            except Exception as api_err:
+                logging.error(f"Errore nell'accesso alle API di Garmin: {str(api_err)}")
+                self.login_frame.show_login_error(f"Impossibile verificare la connessione: {str(api_err)}")
+                self.garmin_client = None
+                return
+                
+            # Login automatico riuscito
+            logging.info("Login automatico riuscito")
+            self.logged_in = True
+            self.update_login_status("Connesso a Garmin Connect")
+            
+            # IMPORTANTE: Aggiorna tutti i frame con il client
+            try:
                 self.workout_editor_frame.on_login(self.garmin_client)
                 self.calendar_frame.on_login(self.garmin_client)
                 self.import_export_frame.on_login(self.garmin_client)
@@ -151,11 +185,14 @@ class GarminPlannerApp(tk.Tk):
                 
                 # Passa alla seconda scheda (Allenamenti) dopo il login
                 self.notebook.select(1)
-                
-            except Exception as e:
-                logging.error(f"Errore nel login automatico: {str(e)}")
-                self.login_frame.show_login_error(f"Errore nel login automatico: {str(e)}")
-    
+            except Exception as ui_err:
+                logging.error(f"Errore nell'aggiornamento dell'interfaccia: {str(ui_err)}")
+                # Continuiamo comunque, l'utente può sempre cambiare scheda manualmente
+            
+        except Exception as e:
+            logging.error(f"Errore imprevisto nel login automatico: {str(e)}")
+            self.login_frame.show_login_error(f"Errore nel login automatico: {str(e)}")
+        
     def set_status(self, message):
         """Imposta il messaggio nella barra di stato"""
         self.status_label.config(text=message)
