@@ -1185,6 +1185,18 @@ class WorkoutConfigDialog(tk.Toplevel):
                 "threshold": "28.0",
                 "ftp": "32.0",
             },
+            'power_values': {
+                "ftp": 250,
+                "Z1": "125-175",
+                "Z2": "175-215",
+                "Z3": "215-250", 
+                "Z4": "250-300",
+                "Z5": "300-375",
+                "Z6": "375-450",
+                "recovery": "100-125",
+                "threshold": "235-265",
+                "sweet_spot": "220-235",
+            },
             'swim_paces': {
                 "Z1": "2:30",
                 "Z2": "2:15",
@@ -1206,8 +1218,8 @@ class WorkoutConfigDialog(tk.Toplevel):
             'margins': {
                 "faster": "0:03",
                 "slower": "0:03",
-                "faster_spd": "2.0",
-                "slower_spd": "2.0",
+                "power_up": "10",
+                "power_down": "10",
                 "hr_up": 5,
                 "hr_down": 5
             },
@@ -1226,16 +1238,21 @@ class WorkoutConfigDialog(tk.Toplevel):
         margins = self.config['margins']
         self.faster_var.set(margins['faster'])
         self.slower_var.set(margins['slower'])
-        self.faster_spd_var.set(margins['faster_spd'])
-        self.slower_spd_var.set(margins['slower_spd'])
+        self.power_up_var.set(margins['power_up'])
+        self.power_down_var.set(margins['power_down'])
         self.hr_up_var.set(margins['hr_up'])
         self.hr_down_var.set(margins['hr_down'])
+        
+        # FTP e Max HR
+        self.max_hr_var.set(str(self.config['heart_rates']['max_hr']))
+        self.ftp_var.set(str(self.config['power_values']['ftp']))
         
         # Aggiorna le liste
         self.update_paces_tree()
         self.update_speeds_tree()
-        self.update_swim_tree()
         self.update_hr_tree()
+        self.update_power_tree()
+        self.update_swim_tree()
 
 
 class ConfigItemDialog(tk.Toplevel):

@@ -1969,7 +1969,7 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
 def create_unified_paces_sheet(workbook, sport_type="running"):
     """
     Crea un foglio Paces unificato che contiene sia i ritmi per la corsa,
-    le velocità per il ciclismo, le zone di potenza FTP e i passi vasca per il nuoto.
+    le zone di potenza FTP per il ciclismo e i passi vasca per il nuoto.
     
     Args:
         workbook: Workbook di openpyxl
@@ -2004,11 +2004,6 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     cycling_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")  # Azzurro chiaro
     power_fill = PatternFill(start_color="D8E4BC", end_color="D8E4BC", fill_type="solid")    # Verde oliva
     swimming_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")  # Arancione chiaro
-    active_fill = running_fill
-    if sport_type == "cycling":
-        active_fill = cycling_fill
-    elif sport_type == "swimming":
-        active_fill = swimming_fill
     
     # Imposta le intestazioni di colonna
     paces_sheet['A1'] = 'Name'
@@ -2039,11 +2034,11 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     
     # Ritmi per la corsa
     running_paces = [
-        ('Z1', '6:30', 'Ritmo facile (rigenerativo)'),
-        ('Z2', '6:00', 'Ritmo aerobico (endurance)'),
-        ('Z3', '5:30', 'Ritmo medio (soglia aerobica)'),
-        ('Z4', '5:00', 'Ritmo soglia (soglia anaerobica)'),
-        ('Z5', '4:30', 'Ritmo VO2max (anaerobico)'),
+        ('Z1', '6:30', 'Ritmo facile (zona 1, recuperativo)'),
+        ('Z2', '6:00', 'Ritmo aerobico (zona 2, endurance)'),
+        ('Z3', '5:30', 'Ritmo medio (zona 3, soglia aerobica)'),
+        ('Z4', '5:00', 'Ritmo soglia (zona 4, soglia anaerobica)'),
+        ('Z5', '4:30', 'Ritmo VO2max (zona 5, anaerobico)'),
         ('recovery', '7:00', 'Ritmo recupero (molto lento)'),
         ('threshold', '5:10', 'Ritmo soglia personalizzato'),
         ('marathon', '5:20', 'Ritmo maratona personalizzato'),
@@ -2064,47 +2059,6 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
             
             # Evidenzia le righe in base al tipo di sport attivo
             if sport_type == "running":
-                cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
-        
-        row += 1
-    
-    # Aggiungi una riga vuota tra le sezioni
-    row += 1
-    
-    # Sezione Cycling - Velocità (obsoleta ma mantenuta per compatibilità)
-    paces_sheet.merge_cells(f'A{row}:C{row}')
-    paces_sheet[f'A{row}'] = 'VELOCITÀ PER IL CICLISMO (km/h)'
-    paces_sheet[f'A{row}'].font = subheader_font
-    paces_sheet[f'A{row}'].fill = cycling_fill
-    paces_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-    row += 1
-    
-    # Velocità per il ciclismo
-    cycling_speeds = [
-        ('Z1', '15.0', 'Velocità facile (zona 1)'),
-        ('Z2', '20.0', 'Velocità aerobica (zona 2)'),
-        ('Z3', '25.0', 'Velocità media (zona 3)'),
-        ('Z4', '30.0', 'Velocità soglia (zona 4)'),
-        ('Z5', '35.0', 'Velocità VO2max (zona 5)'),
-        ('recovery', '12.0', 'Velocità recupero (molto lenta)'),
-        ('threshold', '28.0', 'Velocità soglia personalizzata'),
-        ('ftp', '32.0', 'Velocità FTP personalizzata'),
-    ]
-    
-    # Aggiungi velocità per il ciclismo
-    for name, value, note in cycling_speeds:
-        paces_sheet[f'A{row}'] = name
-        paces_sheet[f'B{row}'] = value
-        paces_sheet[f'C{row}'] = note
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = paces_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Evidenzia le righe in base al tipo di sport attivo
-            if sport_type == "cycling":
                 cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
         
         row += 1
@@ -2390,9 +2344,10 @@ def create_examples_sheet(workbook, sport_type="running"):
     return examples_sheet
 
 
+
 def create_unified_examples_sheet(workbook):
     """
-    Crea un foglio Examples unificato che contiene esempi sia per la corsa che per il ciclismo.
+    Crea un foglio Examples unificato che contiene esempi sia per la corsa, il ciclismo e il nuoto.
     
     Args:
         workbook: Workbook di openpyxl
@@ -2424,6 +2379,7 @@ def create_unified_examples_sheet(workbook):
     header_fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
     running_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")  # Verde chiaro
     cycling_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")  # Azzurro chiaro
+    swimming_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")  # Arancione chiaro
     alternate_fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
     
     # Imposta le intestazioni di colonna
@@ -2459,31 +2415,39 @@ def create_unified_examples_sheet(workbook):
     examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
     row += 1
     
-    # Esempi per la corsa
+    # Esempi per la corsa - ora più dettagliati ed esplicativi
     running_examples = [
-        # Distanza
-        ('Distanza', 'Esempio di allenamento basato su distanza', 
-         "warmup: 2km @Z1_HR\ninterval: 5km @Z3\ncooldown: 1km @Z1_HR"),
+        # Durata basata su tempo
+        ('Tempo', 'Allenamento continuo basato su tempo', 
+         "warmup: 10min @Z1_HR -- Riscaldamento lento\ninterval: 30min @Z2 -- Ritmo aerobico costante\ncooldown: 5min @Z1_HR -- Defaticamento"),
         
-        # Tempo
-        ('Tempo', 'Esempio di allenamento basato su tempo', 
-         "warmup: 10min @Z1_HR\ninterval: 30min @Z2\ncooldown: 5min @Z1_HR"),
+        # Durata basata su distanza
+        ('Distanza', 'Allenamento continuo basato su distanza', 
+         "warmup: 2km @Z1_HR -- Riscaldamento\ninterval: 5km @Z3 -- Ritmo medio\ncooldown: 1km @Z1_HR -- Defaticamento"),
         
-        # Ripetute semplici
-        ('Ripetute semplici', 'Esempio di allenamento con ripetute', 
-         "warmup: 10min @Z1_HR\nrepeat 5:\n  interval: 1km @Z4\n  recovery: 2min @Z1_HR\ncooldown: 10min @Z1_HR"),
+        # Ripetute classiche
+        ('Ripetute', 'Classiche ripetute con recupero', 
+         "warmup: 10min @Z1_HR\nrepeat 5:\n  interval: 400m @Z5 -- Ritmo veloce\n  recovery: 2min @Z1_HR -- Recupero attivo\ncooldown: 10min @Z1_HR"),
         
-        # Con descrizioni
-        ('Con descrizioni', 'Esempio con descrizioni per ogni passo', 
-         "warmup: 10min @Z1_HR -- Inizia lentamente\ninterval: 20min @Z3 -- Mantieni ritmo costante\ncooldown: 5min @Z1_HR -- Rallenta gradualmente"),
+        # Ripetute con zone personalizzate
+        ('Zone personalizzate', 'Utilizzo di zone personalizzate', 
+         "warmup: 15min @Z1_HR\ninterval: 15min @marathon -- Ritmo maratona\ninterval: 10min @threshold -- Ritmo soglia\ninterval: 5min @race_pace -- Ritmo gara\ncooldown: 10min @Z1_HR"),
         
-        # Pulsante lap
-        ('Pulsante lap', 'Esempio con pulsante lap', 
-         "warmup: 10min @Z1_HR\nrest: lap-button @Z1_HR -- Premi lap quando sei pronto\ninterval: 5km @Z3\ncooldown: 5min @Z1_HR"),
+        # Ripetute con passo specifico
+        ('Passo specifico', 'Utilizzo di un passo specifico invece di una zona', 
+         "warmup: 10min @Z1_HR\nrepeat 4:\n  interval: 800m @4:30 -- Ritmo specifico 4:30 min/km\n  recovery: 3min @Z1_HR\ncooldown: 10min @Z1_HR"),
         
-        # Zone personalizzate
-        ('Zone personalizzate', 'Esempio con zone personalizzate', 
-         "warmup: 10min @Z1_HR\ninterval: 20min @marathon\ninterval: 10min @threshold\ncooldown: 5min @Z1_HR")
+        # Pulsante Lap
+        ('Pulsante Lap', 'Utilizzo del pulsante Lap per terminare un passo', 
+         "warmup: 10min @Z1_HR\nrest: lap-button -- Premi il pulsante Lap quando sei pronto\ninterval: 5km @Z4\ncooldown: 5min @Z1_HR"),
+        
+        # Allenamento con zone HR
+        ('Zone frequenza cardiaca', 'Utilizzo di zone di frequenza cardiaca', 
+         "warmup: 10min @hr Z1_HR -- FC bassa\ninterval: 20min @hr Z3_HR -- FC moderata\ninterval: 10min @hr Z4_HR -- FC elevata\ncooldown: 5min @hr Z1_HR -- FC bassa"),
+        
+        # Ripetute a piramide
+        ('Piramide', 'Allenamento a piramide con distanze crescenti e decrescenti', 
+         "warmup: 10min @Z1_HR\nrepeat 1:\n  interval: 400m @Z4\n  recovery: 2min @Z1_HR\n  interval: 800m @Z4\n  recovery: 3min @Z1_HR\n  interval: 1200m @Z4\n  recovery: 3min @Z1_HR\n  interval: 800m @Z4\n  recovery: 2min @Z1_HR\n  interval: 400m @Z4\ncooldown: 10min @Z1_HR"),
     ]
     
     # Aggiungi esempi per la corsa
@@ -2515,35 +2479,107 @@ def create_unified_examples_sheet(workbook):
     examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
     row += 1
     
-    # Esempi per il ciclismo
+    # Esempi per il ciclismo - migliorati con focus sulla potenza e con esempi più pratici
     cycling_examples = [
-        # Distanza
-        ('Distanza', 'Esempio di allenamento basato su distanza', 
-         "warmup: 5km @hr Z1_HR\ninterval: 20km @spd Z3\ncooldown: 3km @hr Z1_HR"),
+        # Potenza - Zone FTP
+        ('Potenza (Zone FTP)', 'Allenamento con zone di potenza basate sull\'FTP', 
+         "warmup: 15min @hr Z1_HR -- FC bassa per riscaldamento\ninterval: 30min @pwr Z3 -- Zona 3 (86-100% FTP)\ncooldown: 10min @hr Z1_HR -- FC bassa per defaticamento"),
         
-        # Tempo
-        ('Tempo', 'Esempio di allenamento basato su tempo', 
-         "warmup: 15min @hr Z1_HR\ninterval: 40min @spd Z2\ncooldown: 5min @hr Z1_HR"),
+        # Potenza - Valori FTP specifici
+        ('Potenza (% FTP)', 'Allenamento con percentuali specifiche dell\'FTP', 
+         "warmup: 15min @hr Z1_HR\ninterval: 20min @pwr 90% -- 90% dell'FTP\ncooldown: 10min @hr Z1_HR"),
         
-        # Ripetute semplici
-        ('Ripetute semplici', 'Esempio di allenamento con ripetute', 
-         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 2min @spd Z4\n  recovery: 2min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        # Potenza - Intervallo percentuale
+        ('Potenza (range %)', 'Allenamento con intervallo percentuale dell\'FTP', 
+         "warmup: 15min @hr Z1_HR\ninterval: 20min @pwr 75-85% -- Tra 75% e 85% dell'FTP\ncooldown: 10min @hr Z1_HR"),
         
-        # Con descrizioni
-        ('Con descrizioni', 'Esempio con descrizioni per ogni passo', 
-         "warmup: 15min @hr Z1_HR -- Inizia lentamente\ninterval: 30min @spd Z3 -- Mantieni ritmo costante\ncooldown: 10min @hr Z1_HR -- Rallenta gradualmente"),
+        # Potenza - Sweet Spot
+        ('Sweet Spot', 'Allenamento "Sweet Spot" (88-94% FTP)', 
+         "warmup: 15min @hr Z1_HR\nrepeat 3:\n  interval: 12min @pwr sweet_spot -- 88-94% FTP\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
         
-        # Pulsante lap
-        ('Pulsante lap', 'Esempio con pulsante lap', 
-         "warmup: 15min @hr Z1_HR\nrest: lap-button @hr Z1_HR -- Premi lap quando sei pronto\ninterval: 20km @spd Z3\ncooldown: 5min @hr Z1_HR"),
+        # Potenza - Intervalli
+        ('Intervalli di potenza', 'Intervalli ad alta intensità con recupero', 
+         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr Z5 -- Zona 5 (120-150% FTP)\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
         
-        # Zone personalizzate
-        ('Zone personalizzate', 'Esempio con zone personalizzate', 
-         "warmup: 15min @hr Z1_HR\ninterval: 30min @spd 28.0\ninterval: 20min @spd threshold\ncooldown: 10min @hr Z1_HR")
+        # Potenza - VO2max
+        ('VO2max', 'Intervalli al 110-120% dell\'FTP per sviluppare il VO2max', 
+         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr 110-120% -- Oltre soglia\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - Neuromuscolare
+        ('Neuromuscolare', 'Sprint brevi ad altissima intensità', 
+         "warmup: 15min @hr Z1_HR\nrepeat 10:\n  interval: 30sec @pwr Z6 -- Potenza massimale\n  recovery: 4min30sec @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - Threshold
+        ('Threshold', 'Blocchi di soglia con recupero breve', 
+         "warmup: 15min @hr Z1_HR\nrepeat 3:\n  interval: 10min @pwr threshold -- Zona soglia\n  recovery: 2min @hr Z1_HR\ncooldown: 15min @hr Z1_HR"),
     ]
     
     # Aggiungi esempi per il ciclismo
     for i, (tipo, descrizione, passi) in enumerate(cycling_examples):
+        examples_sheet[f'A{row}'] = tipo
+        examples_sheet[f'B{row}'] = descrizione
+        examples_sheet[f'C{row}'] = passi
+        
+        # Applica bordi e formattazione a tutte le celle della riga
+        for col in ['A', 'B', 'C']:
+            cell = examples_sheet[f'{col}{row}']
+            cell.border = thin_border
+            cell.alignment = wrapped_alignment
+            
+            # Applica un colore di sfondo alternato per migliorare la leggibilità
+            if i % 2 == 0:
+                cell.fill = alternate_fill
+        
+        row += 1
+    
+    # Aggiungi una riga vuota tra le sezioni
+    row += 1
+    
+    # Sezione Swimming (NUOVA)
+    examples_sheet.merge_cells(f'A{row}:C{row}')
+    examples_sheet[f'A{row}'] = 'ESEMPI PER IL NUOTO (SWIMMING)'
+    examples_sheet[f'A{row}'].font = subheader_font
+    examples_sheet[f'A{row}'].fill = swimming_fill
+    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+    row += 1
+    
+    # Esempi per il nuoto - nuova sezione dettagliata
+    swimming_examples = [
+        # Distanza continua
+        ('Distanza continua', 'Nuotata continua di resistenza', 
+         "warmup: 200m @Z1_HR -- Riscaldamento lento\ninterval: 1000m @Z2 -- Ritmo costante\ncooldown: 100m @Z1_HR -- Defaticamento"),
+        
+        # Allenamento a intervalli
+        ('Intervalli', 'Intervalli con recupero per il nuoto', 
+         "warmup: 200m @Z1_HR\nrepeat 5:\n  interval: 100m @Z4 -- Ritmo veloce\n  recovery: 30s @Z1_HR -- Recupero breve\ncooldown: 100m @Z1_HR"),
+        
+        # Tecniche di nuoto
+        ('Tecniche diverse', 'Allenamento con diverse tecniche di nuoto', 
+         "warmup: 200m @Z1_HR -- Stile libero lento\nrepeat 4:\n  interval: 50m @Z3 -- Stile libero\n  interval: 50m @Z2 -- Dorso\n  recovery: 20s @Z1_HR\ncooldown: 100m @Z1_HR -- Nuoto lento a scelta"),
+        
+        # Sprint 
+        ('Sprint', 'Allenamento con sprint brevi e massimali', 
+         "warmup: 300m @Z1_HR\nrepeat 8:\n  interval: 25m @sprint -- Sprint massimale\n  recovery: 45s @Z1_HR -- Recupero completo\ncooldown: 200m @Z1_HR"),
+        
+        # Threshold
+        ('Threshold', 'Allenamento alla soglia anaerobica', 
+         "warmup: 300m @Z1_HR\nrepeat 3:\n  interval: 200m @threshold -- Ritmo soglia\n  recovery: 45s @Z1_HR\ncooldown: 200m @Z1_HR"),
+        
+        # Piramide
+        ('Piramide', 'Allenamento a piramide con distanze crescenti e decrescenti', 
+         "warmup: 200m @Z1_HR\nrepeat 1:\n  interval: 50m @Z4\n  recovery: 20s @Z1_HR\n  interval: 100m @Z4\n  recovery: 30s @Z1_HR\n  interval: 150m @Z4\n  recovery: 40s @Z1_HR\n  interval: 100m @Z4\n  recovery: 30s @Z1_HR\n  interval: 50m @Z4\ncooldown: 100m @Z1_HR"),
+        
+        # Tecnica con lap-button
+        ('Tecnica - Pulsante Lap', 'Esercizi tecnici terminati con pulsante Lap', 
+         "warmup: 200m @Z1_HR\nrepeat 5:\n  rest: lap-button -- Premi lap quando sei pronto\n  interval: 50m @Z3 -- Focus sulla tecnica delle bracciate\n  recovery: 15s @Z1_HR\ncooldown: 100m @Z1_HR"),
+        
+        # Mix di stili
+        ('Mix di stili', 'Combinazione di diversi stili di nuoto', 
+         "warmup: 200m @Z1_HR -- Stile libero\ninterval: 200m @Z2 -- Dorso\ninterval: 200m @Z2 -- Rana\ninterval: 200m @Z2 -- Stile libero\ncooldown: 100m @Z1_HR -- Stile a scelta")
+    ]
+    
+    # Aggiungi esempi per il nuoto
+    for i, (tipo, descrizione, passi) in enumerate(swimming_examples):
         examples_sheet[f'A{row}'] = tipo
         examples_sheet[f'B{row}'] = descrizione
         examples_sheet[f'C{row}'] = passi
@@ -2570,15 +2606,18 @@ def create_unified_examples_sheet(workbook):
     examples_sheet[f'A{row}'].alignment = wrapped_alignment
     row += 1
     
-    # Regole di sintassi comuni
+    # Regole di sintassi comuni - Espanse e più dettagliate
     syntax_rules = [
-        "Tipi di passo: warmup, interval, recovery, cooldown, rest, repeat, other",
-        "Durata: tempo (s, min, h) o distanza (m, km)",
-        "Per la corsa: usa @ per il ritmo (es. @Z2) e @hr per la frequenza cardiaca (es. @hr Z2_HR)",
-        "Per il ciclismo: usa @spd per la velocità (es. @spd Z3) e @hr per la frequenza cardiaca (es. @hr Z1_HR)",
-        "Zone ritmo/velocità: Z1-Z5 o qualsiasi zona definita nei fogli Paces",
+        "Formato generale: tipo_passo: misura [@target] [-- descrizione]",
+        "Tipi di passo: warmup (riscaldamento), interval (intervallo), recovery (recupero), cooldown (defaticamento), rest (riposo), repeat (ripetizione), other (altro)",
+        "Misura: tempo (10min, 1h, ecc.) o distanza (400m, 5km, ecc.)",
+        "Target per corsa: usa @ per il ritmo (es. @Z2, @marathon, @4:30) e @hr per la frequenza cardiaca (es. @hr Z2_HR)",
+        "Target per ciclismo: usa @pwr per la potenza (es. @pwr Z3, @pwr 90%, @pwr 220-250) e @hr per la FC (es. @hr Z1_HR)",
+        "Target per nuoto: usa @ per il passo vasca (es. @Z2, @threshold, @1:45) e @hr per la FC (es. @hr Z2_HR)",
+        "Zone ritmo/velocità: Z1-Z5 o qualsiasi zona definita nel foglio Paces",
+        "Zone potenza: Z1-Z6, percentuali come 90% o 75-85%, o zone come sweet_spot, threshold",
         "Zone freq. cardiaca: Z1_HR-Z5_HR o qualsiasi zona definita nel foglio HeartRates",
-        "Repeat: repeat N: seguito da step indentati con 2 spazi",
+        "Per ripetizioni: repeat N: seguito da step indentati con 2 spazi",
         "Descrizioni opzionali: aggiungi -- seguito dalla descrizione alla fine del passo"
     ]
     
@@ -2590,7 +2629,6 @@ def create_unified_examples_sheet(workbook):
         row += 1
     
     return examples_sheet
-
 
 def safe_adjust_column_widths(worksheet):
     """
