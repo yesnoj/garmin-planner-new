@@ -239,6 +239,13 @@ class LoginFrame(ttk.Frame):
         self.login_button['state'] = 'disabled'
         self.logout_button['state'] = 'normal'
         
+        # Disabilita i campi per mostrare email e password come "grigetti" di sola lettura
+        self.email_entry['state'] = 'disabled'
+        self.password_entry['state'] = 'disabled'
+        self.oauth_folder_entry['state'] = 'disabled'
+        self.browse_button['state'] = 'disabled'
+        self.save_creds_check['state'] = 'disabled'
+        
         # Informa il controller
         self.controller.on_login(client)
     
@@ -300,6 +307,7 @@ class LoginFrame(ttk.Frame):
             # Informa il controller
             self.controller.on_logout()
     
+
     def update_ui_after_login(self):
         """Aggiorna l'interfaccia dopo un login automatico"""
         # Aggiorna lo stato
@@ -309,7 +317,7 @@ class LoginFrame(ttk.Frame):
         self.login_button['state'] = 'disabled'
         self.logout_button['state'] = 'normal'
         
-        # Disabilita il form
+        # Disabilita i campi ma mantieni visibili i valori
         self.email_entry['state'] = 'disabled'
         self.password_entry['state'] = 'disabled'
         self.oauth_folder_entry['state'] = 'disabled'
