@@ -23,6 +23,8 @@ from garmin_planner_gui.gui.utils import (
     format_workout_name, parse_workout_name
 )
 
+from garmin_planner_gui.gui.scheduling import schedule_workouts_by_week, apply_scheduled_dates, clear_workout_dates
+
 class WorkoutEditorFrame(ttk.Frame):
     """Frame per la creazione e modifica degli allenamenti"""
     
@@ -104,7 +106,56 @@ class WorkoutEditorFrame(ttk.Frame):
         status_label = ttk.Label(lower_frame, textvariable=self.status_var, 
                                style="Status.TLabel")
         status_label.pack(anchor=tk.W, pady=5)
-    
+        self.load_planning_config()
+
+
+    def schedule_workouts_dialog(self):
+        """Reindirizza al metodo di pianificazione diretta"""
+        self.schedule_workouts_direct()
+
+
+    def clear_workout_dates(self):
+        """Rimuove le date dagli allenamenti selezionati"""
+        # Verifica che ci siano allenamenti selezionati
+        selection = self.workout_tree.selection()
+        if not selection:
+            messagebox.showwarning("Nessuna selezione", 
+                                "Seleziona gli allenamenti da cui rimuovere le date.", 
+                                parent=self)
+            return
+        
+        # Ottieni gli indici degli allenamenti selezionati
+        indices = [self.workout_tree.index(item) for item in selection]
+        
+        # Chiedi conferma
+        if not messagebox.askyesno("Conferma rimozione", 
+                                f"Sei sicuro di voler rimuovere le date da {len(indices)} allenamenti selezionati?", 
+                                parent=self):
+            return
+        
+        try:
+            # Importa la funzione per rimuovere le date
+            from garmin_planner_gui.gui.scheduling import clear_workout_dates
+            
+            # Rimuovi le date
+            self.workouts = clear_workout_dates(self.workouts, indices)
+            
+            # Aggiorna la lista
+            self.refresh_workout_list()
+            
+            # Mostra messaggio di conferma
+            messagebox.showinfo("Operazione completata", 
+                              f"Date rimosse da {len(indices)} allenamenti.", 
+                              parent=self)
+            
+        except Exception as e:
+            logging.error(f"Errore nella rimozione delle date: {str(e)}")
+            messagebox.showerror("Errore", 
+                              f"Si è verificato un errore durante la rimozione delle date:\n{str(e)}", 
+                              parent=self)
+
+
+
 
     def save_athlete_name(self):
         """Salva il nome dell'atleta nella configurazione"""
@@ -173,7 +224,7 @@ class WorkoutEditorFrame(ttk.Frame):
         # Crea la treeview per la lista
         columns = ("name", "sport", "date", "steps")
         self.workout_tree = ttk.Treeview(list_container, columns=columns, show="headings", 
-                                       selectmode="extended")  # Cambiato da "browse" a "extended" per consentire selezioni multiple
+                                       selectmode="extended")  # Modificato da "browse" a "extended" per consentire selezioni multiple
         
         # Definisci le intestazioni
         self.workout_tree.heading("name", text="Nome")
@@ -200,7 +251,7 @@ class WorkoutEditorFrame(ttk.Frame):
         self.workout_tree.bind("<<TreeviewSelect>>", self.on_workout_select)
         self.workout_tree.bind("<Double-1>", self.on_workout_double_click)
         
-        # Pulsanti sotto la lista
+        # Pulsanti sotto la lista - MODIFICATO: rimosso pulsante "Pianifica..." e mantenuto "Rimuovi date"
         button_frame = ttk.Frame(parent)
         button_frame.pack(fill=tk.X, pady=(5, 0))
         
@@ -215,6 +266,10 @@ class WorkoutEditorFrame(ttk.Frame):
         # Pulsante per eliminare un allenamento
         delete_button = ttk.Button(button_frame, text="Elimina", command=self.delete_workout)
         delete_button.pack(side=tk.LEFT, padx=5)
+        
+        # Pulsante per rimuovere le date pianificate
+        self.clear_dates_button = ttk.Button(button_frame, text="Rimuovi date", command=self.clear_workout_dates)
+        self.clear_dates_button.pack(side=tk.LEFT, padx=5)
         
         # Pulsante per aggiornare la lista
         refresh_button = ttk.Button(button_frame, text="Aggiorna", command=self.refresh_workout_list)
@@ -1084,6 +1139,7 @@ class WorkoutEditorFrame(ttk.Frame):
             # Aggiorna l'interfaccia se necessario
             self.refresh_workout_list()
     
+
     def sync_with_garmin(self):
         """Sincronizza gli allenamenti con Garmin Connect"""
         if not self.garmin_client:
@@ -1093,7 +1149,7 @@ class WorkoutEditorFrame(ttk.Frame):
         # Crea un dialog personalizzato
         sync_dialog = tk.Toplevel(self)
         sync_dialog.title("Sincronizza con Garmin Connect")
-        sync_dialog.geometry("400x300")
+        sync_dialog.geometry("400x350")  # Aumentato l'altezza per la nuova opzione
         sync_dialog.transient(self)
         sync_dialog.grab_set()
         
@@ -1112,10 +1168,17 @@ class WorkoutEditorFrame(ttk.Frame):
         ttk.Radiobutton(sync_dialog, text="Scarica allenamenti da Garmin Connect", 
                        variable=sync_var, value=3).pack(anchor=tk.W, padx=20, pady=5)
         
+        # NUOVO: Opzione per rimuovere date pianificate
+        ttk.Radiobutton(sync_dialog, text="Rimuovi date dagli allenamenti selezionati", 
+                       variable=sync_var, value=4).pack(anchor=tk.W, padx=20, pady=5)
+        
+        # Separatore per chiarezza visiva
+        ttk.Separator(sync_dialog, orient='horizontal').pack(fill='x', padx=20, pady=10)
+        
         # Flag per sovrascrittura
         replace_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(sync_dialog, text="Sovrascrivi allenamenti esistenti con lo stesso nome", 
-                       variable=replace_var).pack(anchor=tk.W, padx=20, pady=10)
+                       variable=replace_var).pack(anchor=tk.W, padx=20, pady=5)
         
         # Flag per pianificazione
         schedule_var = tk.BooleanVar(value=True)
@@ -1159,6 +1222,9 @@ class WorkoutEditorFrame(ttk.Frame):
         elif result["action"] == 3:
             # Scarica allenamenti
             self.download_workouts()
+        elif result["action"] == 4:
+            # NUOVO: Rimuovi date dagli allenamenti selezionati
+            self.clear_workout_dates()
 
         
     def upload_all_workouts(self, replace=False):
@@ -2498,7 +2564,57 @@ class WorkoutEditorFrame(ttk.Frame):
         properties_frame.columnconfigure(1, weight=1)
         properties_frame.columnconfigure(5, weight=2)
         
-        # Canvas per visualizzare graficamente i passi
+        planning_frame = ttk.LabelFrame(parent, text="Opzioni di pianificazione")
+        planning_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
+        
+        planning_grid = ttk.Frame(planning_frame, padding=5)
+        planning_grid.pack(fill=tk.X, expand=True)
+        
+        # Data della gara
+        ttk.Label(planning_grid, text="Data gara:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        # Imposta come default una data a 3 mesi da oggi
+        default_race_day = (datetime.datetime.today() + datetime.timedelta(days=90)).strftime("%Y-%m-%d")
+        self.race_date_var = tk.StringVar(value=default_race_day)
+        
+        date_entry = ttk.Entry(planning_grid, textvariable=self.race_date_var, width=15)
+        date_entry.grid(row=0, column=1, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        # Pulsante calendario
+        race_calendar_button = ttk.Button(planning_grid, text="📅", width=3, 
+                                        command=self.show_race_calendar)
+        race_calendar_button.grid(row=0, column=2, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        # Giorni preferiti per l'allenamento
+        ttk.Label(planning_grid, text="Giorni preferiti:").grid(row=0, column=3, sticky=tk.W, padx=(20, 5), pady=5)
+        
+        # Frame per i checkbox dei giorni
+        days_frame = ttk.Frame(planning_grid)
+        days_frame.grid(row=0, column=4, columnspan=4, sticky=tk.W, padx=(0, 5), pady=5)
+        
+        days_of_week = [("L", 0), ("M", 1), ("M", 2), ("G", 3), ("V", 4), ("S", 5), ("D", 6)]
+        
+        # Crea variabili e checkbox per ogni giorno
+        self.preferred_days_vars = {}
+        
+        for i, (day_label, day_value) in enumerate(days_of_week):
+            var = tk.BooleanVar(value=False)
+            self.preferred_days_vars[day_value] = var  # 0 = Lunedì, 6 = Domenica
+            
+            cb = ttk.Checkbutton(days_frame, text=day_label, variable=var, width=3)
+            cb.pack(side=tk.LEFT, padx=2)
+        
+        # Imposta valori di default comuni (mar, gio, dom)
+        self.preferred_days_vars[1].set(True)  # Martedì
+        self.preferred_days_vars[3].set(True)  # Giovedì
+        self.preferred_days_vars[6].set(True)  # Domenica
+        
+        # Pulsante pianifica
+        self.plan_button = ttk.Button(planning_grid, text="Pianifica", 
+                                    command=self.schedule_workouts_direct)
+        self.plan_button.grid(row=0, column=8, padx=(10, 0), pady=5)
+        
+        # Canvas per visualizzare graficamente i passi (esistente)
         canvas_frame = ttk.LabelFrame(parent, text="Anteprima allenamento")
         canvas_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
         
@@ -2612,6 +2728,179 @@ class WorkoutEditorFrame(ttk.Frame):
         
         # Stato iniziale: disabilitato
         self.disable_editor()
+
+
+    def show_race_calendar(self):
+        """Mostra un selettore di data per la data della gara"""
+        try:
+            from tkcalendar import Calendar
+            
+            # Crea una finestra top-level
+            top = tk.Toplevel(self)
+            top.title("Seleziona data della gara")
+            top.geometry("350x300")
+            top.transient(self)
+            top.grab_set()
+            
+            # Data iniziale
+            if self.race_date_var.get():
+                try:
+                    initial_date = datetime.datetime.strptime(self.race_date_var.get(), "%Y-%m-%d").date()
+                except ValueError:
+                    initial_date = datetime.date.today()
+            else:
+                initial_date = datetime.date.today()
+            
+            # Crea il calendario
+            cal = Calendar(top, selectmode='day', year=initial_date.year, 
+                          month=initial_date.month, day=initial_date.day,
+                          date_pattern="yyyy-mm-dd")
+            cal.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            # Funzione per selezionare la data
+            def select_date():
+                self.race_date_var.set(cal.get_date())
+                top.destroy()
+            
+            # Pulsante per confermare
+            ttk.Button(top, text="Seleziona", command=select_date).pack(pady=10)
+            
+        except ImportError:
+            # Se tkcalendar non è disponibile, usa un semplice dialogo
+            from tkinter import simpledialog
+            date_str = simpledialog.askstring("Data", "Inserisci la data della gara (YYYY-MM-DD):", 
+                                            parent=self, initialvalue=self.race_date_var.get())
+            if date_str:
+                try:
+                    # Verifica che sia una data valida
+                    datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                    self.race_date_var.set(date_str)
+                except ValueError:
+                    show_error("Errore", "Formato data non valido. Usa YYYY-MM-DD.", parent=self)
+
+
+    def schedule_workouts_direct(self):
+        """Pianifica gli allenamenti direttamente usando i dati del form principale"""
+        # Verifica che ci siano allenamenti
+        if not self.workouts:
+            messagebox.showwarning("Nessun allenamento", 
+                                 "Non ci sono allenamenti da pianificare.", 
+                                 parent=self)
+            return
+        
+        # Ottieni la data della gara
+        race_date_str = self.race_date_var.get().strip()
+        try:
+            race_date = datetime.datetime.strptime(race_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            messagebox.showerror("Errore", "La data della gara non è valida. Usa il formato YYYY-MM-DD.", parent=self)
+            return
+        
+        # Ottieni i giorni preferiti
+        preferred_days = [day for day, var in self.preferred_days_vars.items() if var.get()]
+        if not preferred_days:
+            messagebox.showerror("Errore", "Seleziona almeno un giorno preferito per l'allenamento.", parent=self)
+            return
+        
+        # Pianifica gli allenamenti
+        try:
+            # Importa le funzioni di pianificazione
+            from garmin_planner_gui.gui.scheduling import (
+                schedule_workouts_by_week, 
+                apply_scheduled_dates
+            )
+            
+            # Pianifica gli allenamenti
+            scheduled_dates = schedule_workouts_by_week(
+                self.workouts, 
+                race_date, 
+                preferred_days
+            )
+            
+            # Se non sono state assegnate date
+            if not scheduled_dates:
+                messagebox.showwarning("Nessuna data pianificata", 
+                                     "Non è stato possibile pianificare gli allenamenti. "
+                                     "Verifica che ci siano allenamenti nel formato corretto (W00S00).", 
+                                     parent=self)
+                return
+            
+            # Applica le date pianificate
+            self.workouts = apply_scheduled_dates(self.workouts, scheduled_dates)
+            
+            # Aggiorna la lista
+            self.refresh_workout_list()
+            
+            # Aggiorna la configurazione con i dati di pianificazione
+            self.save_planning_config(race_date_str, preferred_days)
+            
+            # Mostra messaggio di conferma
+            messagebox.showinfo("Pianificazione completata", 
+                              f"Sono stati pianificati {len(scheduled_dates)} allenamenti.", 
+                              parent=self)
+            
+        except Exception as e:
+            logging.error(f"Errore nella pianificazione degli allenamenti: {str(e)}")
+            messagebox.showerror("Errore", 
+                              f"Si è verificato un errore durante la pianificazione:\n{str(e)}", 
+                              parent=self)
+
+    def save_planning_config(self, race_date, preferred_days):
+        """Salva la configurazione di pianificazione nella configurazione globale"""
+        # Assicurati che workout_config esista
+        if 'workout_config' not in self.controller.config:
+            self.controller.config['workout_config'] = {}
+        
+        # Salva i dati di pianificazione
+        self.controller.config['workout_config']['race_day'] = race_date
+        self.controller.config['workout_config']['preferred_days'] = preferred_days
+        
+        # Aggiorna la configurazione locale
+        self.workout_config = self.controller.config['workout_config']
+        
+        # Salva la configurazione
+        from garmin_planner_gui.gui.utils import save_config
+        save_config(self.controller.config)
+        
+        # Log
+        logging.info(f"Configurazione di pianificazione salvata: race_day={race_date}, preferred_days={preferred_days}")
+
+    def load_planning_config(self):
+        """Carica la configurazione di pianificazione dalla configurazione globale"""
+        # Se workout_config esiste, carica i dati di pianificazione
+        if 'workout_config' in self.controller.config:
+            race_day = self.controller.config['workout_config'].get('race_day')
+            preferred_days = self.controller.config['workout_config'].get('preferred_days')
+            
+            # Imposta la data della gara se presente
+            if race_day and hasattr(self, 'race_date_var'):
+                self.race_date_var.set(race_day)
+            
+            # Imposta i giorni preferiti se presenti
+            if preferred_days and hasattr(self, 'preferred_days_vars'):
+                # Reset tutti i giorni
+                for day in range(7):
+                    self.preferred_days_vars[day].set(False)
+                
+                # Imposta i giorni preferiti
+                if isinstance(preferred_days, list):
+                    for day in preferred_days:
+                        if 0 <= day <= 6:  # Validazione per sicurezza
+                            self.preferred_days_vars[day].set(True)
+                elif isinstance(preferred_days, str):
+                    # Prova a interpretare la stringa come lista
+                    try:
+                        # Rimuovi le parentesi quadre e dividi per virgole
+                        clean_str = preferred_days.strip('[]').replace(' ', '')
+                        day_list = [int(d) for d in clean_str.split(',') if d.isdigit()]
+                        
+                        for day in day_list:
+                            if 0 <= day <= 6:
+                                self.preferred_days_vars[day].set(True)
+                    except Exception as e:
+                        logging.warning(f"Errore nel parsing dei giorni preferiti: {str(e)}")
+            
+            logging.info(f"Configurazione di pianificazione caricata: race_day={race_day}, preferred_days={preferred_days}")
 
 
     def on_canvas_press(self, event):

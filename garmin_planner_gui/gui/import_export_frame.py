@@ -1424,147 +1424,108 @@ class ImportExportFrame(ttk.Frame):
             else:
                 self.excel_file_var.set(filename)
     
-    def import_from_yaml(self):
-        """Importa allenamenti da un file YAML/JSON"""
-        # Ottieni il nome del file
-        filename = self.yaml_file_var.get().strip()
-        if not filename:
-            messagebox.showerror("Errore", 
-                               "Seleziona un file da importare", 
-                               parent=self)
-            return
-        
-        # Verifica che il file esista
-        if not os.path.exists(filename):
-            messagebox.showerror("Errore", 
-                               f"Il file {filename} non esiste", 
-                               parent=self)
-            return
-        
-        # Ottieni le opzioni
-        overwrite = self.yaml_overwrite_var.get()
-        
-        # Log
-        self.write_log(f"Importazione da {filename}")
-        
+    def import_from_yaml(self, filename):
+        """Importa gli allenamenti da un file YAML"""
         try:
-            # Determina il tipo di file
-            if filename.lower().endswith(('.yaml', '.yml')):
-                with open(filename, 'r', encoding='utf-8') as f:
-                    data = yaml.safe_load(f)
-            elif filename.lower().endswith('.json'):
-                with open(filename, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            else:
-                # Prova prima come YAML, poi come JSON
-                try:
-                    with open(filename, 'r', encoding='utf-8') as f:
-                        data = yaml.safe_load(f)
-                except:
-                    with open(filename, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
+            with open(filename, 'r', encoding='utf-8') as f:
+                yaml_data = yaml.safe_load(f)
             
-            # Lista delle chiavi speciali che non sono allenamenti
-            config_keys = ['config', 'athlete_name', 'paces', 'power_values', 'swim_paces', 'speeds', 'heart_rates']
+            # Estrai configurazione
+            config = yaml_data.get('config', {})
             
-            # Estrai la configurazione se presente
-            if 'config' in data:
-                # Aggiorna la configurazione
-                new_config = data.pop('config')
+            # Aggiorna la configurazione locale
+            self.workout_config = config.copy()
+            
+            # Estrai i ritmi, potenza e frequenze cardiache (prima controlla a livello radice, poi in config)
+            paces = yaml_data.get('paces', {})
+            if not paces and 'paces' in config:
+                paces = config.get('paces', {})
+            
+            power_values = yaml_data.get('power_values', {})
+            if not power_values and 'power_values' in config:
+                power_values = config.get('power_values', {})
+            
+            heart_rates = yaml_data.get('heart_rates', {})
+            if not heart_rates:
+                heart_rates = config.get('heart_rates', {})
+            
+            # Memorizza i valori estratti
+            self.workout_config['paces'] = paces
+            self.workout_config['power_values'] = power_values
+            self.workout_config['heart_rates'] = heart_rates
+            
+            # Estrai race_day e preferred_days
+            if 'race_day' in config and hasattr(self, 'race_date_var'):
+                self.race_date_var.set(config['race_day'])
+            
+            if 'preferred_days' in config and hasattr(self, 'preferred_days_vars'):
+                # Gestisci sia lista che stringa
+                preferred_days = config['preferred_days']
                 
-                # Aggiorna in modo sicuro (senza sovrascrivere tutto)
-                if not 'workout_config' in self.controller.config:
-                    self.controller.config['workout_config'] = {}
-                
-                # Aggiorna le varie sezioni
-                for section in ['paces', 'speeds', 'swim_paces', 'heart_rates', 'power_values', 'margins']:
-                    if section in new_config:
-                        if section not in self.controller.config['workout_config']:
-                            self.controller.config['workout_config'][section] = {}
+                # Resetta tutti i giorni
+                for day in range(7):
+                    self.preferred_days_vars[day].set(False)
+                    
+                # Imposta i giorni preferiti
+                if isinstance(preferred_days, list):
+                    for day in preferred_days:
+                        if isinstance(day, int) and 0 <= day <= 6:
+                            self.preferred_days_vars[day].set(True)
+                elif isinstance(preferred_days, str):
+                    # Prova a interpretare la stringa come lista
+                    try:
+                        # Rimuovi le parentesi quadre e dividi per virgole
+                        clean_str = preferred_days.strip('[]').replace(' ', '')
+                        day_list = [int(d) for d in clean_str.split(',') if d.isdigit()]
                         
-                        # Per ogni chiave nella sezione
-                        for key, value in new_config[section].items():
-                            self.controller.config['workout_config'][section][key] = value
-                
-                # Altri parametri
-                for param in ['name_prefix', 'sport_type', 'athlete_name']:
-                    if param in new_config:
-                        self.controller.config['workout_config'][param] = new_config[param]
-                
-                self.write_log("Configurazione aggiornata")
+                        for day in day_list:
+                            if 0 <= day <= 6:
+                                self.preferred_days_vars[day].set(True)
+                    except Exception as e:
+                        logging.warning(f"Errore nel parsing dei giorni preferiti: {str(e)}")
             
-            # Estrai athlete_name se presente nella radice
-            if 'athlete_name' in data:
-                athlete_name = data.pop('athlete_name')
-                # Aggiorna il nome dell'atleta nella configurazione principale
-                self.controller.config['athlete_name'] = athlete_name
-                # E anche in workout_config per mantenere la coerenza
-                if 'workout_config' not in self.controller.config:
-                    self.controller.config['workout_config'] = {}
-                self.controller.config['workout_config']['athlete_name'] = athlete_name
-                self.write_log(f"Nome atleta aggiornato: {athlete_name}")
+            # Estrai il nome dell'atleta
+            if 'athlete_name' in config and hasattr(self, 'athlete_name_var'):
+                self.athlete_name_var.set(config['athlete_name'])
+                # Aggiorna anche nella configurazione principale
+                self.controller.config['athlete_name'] = config['athlete_name']
             
-            # Estrai direttamente le sezioni di configurazione dalla radice e aggiornale
-            for config_section in ['paces', 'power_values', 'swim_paces', 'speeds', 'heart_rates']:
-                if config_section in data:
-                    section_data = data.pop(config_section)
-                    # Assicurati che workout_config esista
-                    if 'workout_config' not in self.controller.config:
-                        self.controller.config['workout_config'] = {}
-                    # Aggiorna la sezione
-                    self.controller.config['workout_config'][config_section] = section_data
-                    self.write_log(f"Sezione {config_section} aggiornata")
+            # Estrai gli allenamenti
+            new_workouts = []
+            for key, value in yaml_data.items():
+                if key != 'config' and isinstance(value, list):
+                    new_workouts.append((key, value))
             
-            # Conta gli allenamenti
-            total_workouts = sum(1 for name in data.keys() if name not in config_keys)
-            imported_workouts = 0
-            skipped_workouts = 0
+            # Ordina gli allenamenti per settimana e sessione
+            def sort_key(workout_name):
+                match = re.match(r'W(\d+)S(\d+)', workout_name)
+                if match:
+                    week = int(match.group(1))
+                    session = int(match.group(2))
+                    return (week, session)
+                return (99, 99)  # Default per allenamenti senza il formato standard
             
-            # Ottieni gli allenamenti correnti dall'editor
-            current_workouts = self.controller.workout_editor_frame.workouts
-            current_names = [name for name, _ in current_workouts]
-            
-            # Importa gli allenamenti
-            for name, steps in data.items():
-                # Salta le chiavi di configurazione
-                if name in config_keys:
-                    continue
-                
-                # Verifica se esiste già
-                if name in current_names:
-                    if overwrite:
-                        # Rimuovi l'allenamento esistente
-                        idx = current_names.index(name)
-                        current_workouts[idx] = (name, steps)
-                        self.write_log(f"Allenamento aggiornato: {name}")
-                    else:
-                        skipped_workouts += 1
-                        self.write_log(f"Allenamento saltato (già esistente): {name}")
-                        continue
-                else:
-                    # Aggiungi il nuovo allenamento
-                    current_workouts.append((name, steps))
-                    self.write_log(f"Allenamento importato: {name}")
-                
-                imported_workouts += 1
+            new_workouts.sort(key=lambda x: sort_key(x[0]))
             
             # Aggiorna la lista degli allenamenti
-            self.controller.workout_editor_frame.refresh_workout_list()
+            self.workouts = new_workouts
             
-            # Mostra un messaggio di conferma
-            messagebox.showinfo("Importazione completata", 
-                              f"Importati {imported_workouts} allenamenti.\n"
-                              f"Saltati {skipped_workouts} allenamenti.", 
-                              parent=self)
+            # Salva la configurazione di pianificazione
+            if hasattr(self, 'race_date_var') and hasattr(self, 'preferred_days_vars'):
+                self.save_planning_config(
+                    self.race_date_var.get(),
+                    [day for day, var in self.preferred_days_vars.items() if var.get()]
+                )
             
-            # Log
-            self.write_log(f"Importazione completata: {imported_workouts} importati, {skipped_workouts} saltati")
+            # Aggiorna l'interfaccia
+            self.refresh_workout_list()
+            self.status_var.set(f"Importati {len(new_workouts)} allenamenti da {filename}")
+            self.controller.set_status(f"Importati {len(new_workouts)} allenamenti da {filename}")
             
+            return True
         except Exception as e:
-            messagebox.showerror("Errore", 
-                               f"Errore durante l'importazione: {str(e)}", 
-                               parent=self)
-            self.write_log(f"Errore: {str(e)}")
+            show_error("Errore", f"Impossibile importare il file: {str(e)}", parent=self)
+            return False
     
     def import_from_excel(self):
         """Importa allenamenti da un file Excel"""
