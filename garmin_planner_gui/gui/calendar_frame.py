@@ -13,6 +13,7 @@ import re
 import logging
 from .styles import COLORS, SPORT_ICONS
 import json
+import webbrowser
 
 class CalendarFrame(ttk.Frame):
     """Frame per la gestione del calendario di allenamenti"""
@@ -22,10 +23,14 @@ class CalendarFrame(ttk.Frame):
         self.controller = controller
         self.garmin_client = None
         self.scheduled_workouts = []
+        self.activities = []  # Nuova lista per memorizzare le attività
         
         # Mese e anno correnti per la visualizzazione
         self.current_month = datetime.datetime.now().month
         self.current_year = datetime.datetime.now().year
+        
+        # Flag per mostrare o nascondere le attività nel calendario
+        self.show_activities = tk.BooleanVar(value=True)
         
         # Inizializza l'interfaccia
         self.init_ui()
@@ -56,19 +61,18 @@ class CalendarFrame(ttk.Frame):
         # Pulsante per tornare al mese corrente
         ttk.Button(nav_frame, text="Oggi", command=self.goto_today).pack(side=tk.LEFT, padx=(10, 0))
         
+        # Checkbox per mostrare/nascondere le attività
+        ttk.Checkbutton(nav_frame, text="Mostra attività", 
+                       variable=self.show_activities, 
+                       command=self.on_toggle_activities).pack(side=tk.LEFT, padx=(10, 0))
+        
         # Pulsante per sincronizzare con Garmin Connect
         self.sync_button = ttk.Button(nav_frame, text="Sincronizza calendario", 
                                      command=self.sync_calendar)
         self.sync_button.pack(side=tk.RIGHT, padx=5)
         
-        # Pulsante per creare un allenamento di test
-        self.test_workout_button = ttk.Button(nav_frame, text="Schedule Test Workout", 
-                                          command=self.schedule_test_workout)
-        self.test_workout_button.pack(side=tk.RIGHT, padx=5)
-        
         # Disabilitato fino al login
         self.sync_button['state'] = 'disabled'
-        self.test_workout_button['state'] = 'disabled'
         
         # Frame per il calendario
         calendar_frame = ttk.Frame(main_frame)
@@ -222,7 +226,127 @@ class CalendarFrame(ttk.Frame):
         # Disegna il calendario
         self.draw_calendar()
 
-    
+    def debug_activities(self):
+        """Visualizza informazioni di debug sulle attività nel mese corrente"""
+        if not hasattr(self, 'activities') or not self.activities:
+            logging.error("Nessuna attività disponibile per il debug")
+            return
+            
+        # Crea una finestra di dialogo per visualizzare le informazioni
+        debug_dialog = tk.Toplevel(self)
+        debug_dialog.title("Debug Attività")
+        debug_dialog.geometry("800x600")
+        debug_dialog.transient(self)
+        
+        # Frame principale con padding
+        main_frame = ttk.Frame(debug_dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Intestazione
+        ttk.Label(main_frame, text=f"Attività per {self.current_year}-{self.current_month}", 
+                 style="Heading.TLabel").pack(pady=(0, 10))
+        
+        # Area di testo per le informazioni
+        text_area = tk.Text(main_frame, wrap=tk.WORD)
+        text_area.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(text_area, orient=tk.VERTICAL, command=text_area.yview)
+        text_area.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Inserisci informazioni sulle attività
+        text_area.insert(tk.END, f"Numero totale di attività: {len(self.activities)}\n\n")
+        
+        # Raggruppa le attività per data
+        activities_by_date = {}
+        for activity in self.activities:
+            if 'startTimeLocal' in activity:
+                date_str = activity.get('startTimeLocal', '').split('T')[0]
+                if date_str not in activities_by_date:
+                    activities_by_date[date_str] = []
+                activities_by_date[date_str].append(activity)
+        
+        # Visualizza attività raggruppate per data
+        for date_str, day_activities in sorted(activities_by_date.items()):
+            text_area.insert(tk.END, f"\nData: {date_str} ({len(day_activities)} attività)\n")
+            for i, activity in enumerate(day_activities):
+                text_area.insert(tk.END, f"  {i+1}. Nome: {activity.get('activityName', 'Sconosciuto')}\n")
+                text_area.insert(tk.END, f"     Tipo: {activity.get('activityType', {}).get('typeKey', 'Sconosciuto')}\n")
+                text_area.insert(tk.END, f"     ID: {activity.get('activityId', 'Sconosciuto')}\n")
+                text_area.insert(tk.END, f"     Inizio: {activity.get('startTimeLocal', 'Sconosciuto')}\n")
+        
+        # Informazioni sulla struttura delle attività
+        if self.activities:
+            text_area.insert(tk.END, "\n\nStruttura della prima attività:\n")
+            first_activity = self.activities[0]
+            for key, value in first_activity.items():
+                text_area.insert(tk.END, f"  {key}: {value}\n")
+        
+        # Rendi l'area di testo di sola lettura
+        text_area.configure(state=tk.DISABLED)
+        
+        # Pulsante per chiudere
+        ttk.Button(main_frame, text="Chiudi", command=debug_dialog.destroy).pack(pady=(10, 0))
+
+    def on_toggle_activities(self):
+        """Gestisce il toggle per mostrare/nascondere le attività"""
+        show = self.show_activities.get()
+        logging.info(f"Toggle attività: {show}")
+        
+        # Se abbiamo attivato le attività e siamo loggati, sincronizza il calendario
+        if show and self.garmin_client:
+            self.sync_calendar(show_messages=False)
+        else:
+            # Altrimenti ridisegna semplicemente il calendario
+            self.draw_calendar()
+
+    def fetch_activities(self):
+        """Recupera le attività da Garmin Connect"""
+        if not self.garmin_client:
+            logging.error("Nessun client Garmin disponibile")
+            return
+        
+        logging.info("Recupero attività...")
+        
+        try:
+            # Calcola le date di inizio e fine per il mese corrente
+            start_date = datetime.date(self.current_year, self.current_month, 1)
+            _, last_day = calendar.monthrange(self.current_year, self.current_month)
+            end_date = datetime.date(self.current_year, self.current_month, last_day)
+            
+            # Formatta le date
+            start_str = start_date.strftime('%Y-%m-%d')
+            end_str = end_date.strftime('%Y-%m-%d')
+            
+            logging.info(f"Ricerca attività dal {start_str} al {end_str}")
+            
+            # Recupera le attività
+            activities = self.garmin_client.get_activities(
+                start_date=start_str,
+                end_date=end_str,
+                limit=100  # Limite alto per recuperare più attività possibili
+            )
+            
+            # Imposta le attività recuperate
+            self.activities = activities if activities else []
+            
+            logging.info(f"Recuperate {len(self.activities)} attività")
+            
+            # Log dettagli delle attività
+            for activity in self.activities[:5]:  # Log solo prime 5 per brevità
+                activity_date = activity.get('startTimeLocal', '').split('T')[0] if 'startTimeLocal' in activity else 'Sconosciuta'
+                activity_name = activity.get('activityName', 'Sconosciuta')
+                activity_type = activity.get('activityType', {}).get('typeKey', 'Sconosciuto')
+                logging.info(f"Attività: {activity_name} ({activity_type}) il {activity_date}")
+            
+            if len(self.activities) > 5:
+                logging.info(f"... e altre {len(self.activities) - 5} attività")
+                
+        except Exception as e:
+            logging.error(f"Errore nel recupero delle attività: {str(e)}")
+            self.activities = []
+
     def update_date_label(self):
         """Aggiorna l'etichetta con mese e anno correnti"""
         month_name = calendar.month_name[self.current_month]
@@ -236,7 +360,12 @@ class CalendarFrame(ttk.Frame):
             self.current_year -= 1
         
         self.update_date_label()
-        self.draw_calendar()
+        
+        # Se è attiva l'opzione "Mostra attività", sincronizza automaticamente il calendario
+        if hasattr(self, 'show_activities') and self.show_activities.get() and self.garmin_client:
+            self.sync_calendar(show_messages=False)
+        else:
+            self.draw_calendar()
     
     def next_month(self):
         """Passa al mese successivo"""
@@ -246,19 +375,34 @@ class CalendarFrame(ttk.Frame):
             self.current_year += 1
         
         self.update_date_label()
-        self.draw_calendar()
+        
+        # Se è attiva l'opzione "Mostra attività", sincronizza automaticamente il calendario
+        if hasattr(self, 'show_activities') and self.show_activities.get() and self.garmin_client:
+            self.sync_calendar(show_messages=False)
+        else:
+            self.draw_calendar()
     
     def prev_year(self):
         """Passa all'anno precedente"""
         self.current_year -= 1
         self.update_date_label()
-        self.draw_calendar()
-    
+        
+        # Se è attiva l'opzione "Mostra attività", sincronizza automaticamente il calendario
+        if hasattr(self, 'show_activities') and self.show_activities.get() and self.garmin_client:
+            self.sync_calendar(show_messages=False)
+        else:
+            self.draw_calendar()
+
     def next_year(self):
         """Passa all'anno successivo"""
         self.current_year += 1
         self.update_date_label()
-        self.draw_calendar()
+        
+        # Se è attiva l'opzione "Mostra attività", sincronizza automaticamente il calendario
+        if hasattr(self, 'show_activities') and self.show_activities.get() and self.garmin_client:
+            self.sync_calendar(show_messages=False)
+        else:
+            self.draw_calendar()
     
     def goto_today(self):
         """Torna al mese e anno correnti"""
@@ -267,7 +411,12 @@ class CalendarFrame(ttk.Frame):
         self.current_year = today.year
         
         self.update_date_label()
-        self.draw_calendar()
+        
+        # Se è attiva l'opzione "Mostra attività", sincronizza automaticamente il calendario
+        if hasattr(self, 'show_activities') and self.show_activities.get() and self.garmin_client:
+            self.sync_calendar(show_messages=False)
+        else:
+            self.draw_calendar()
     
     def draw_calendar(self):
         """Disegna il calendario del mese corrente"""
@@ -343,54 +492,216 @@ class CalendarFrame(ttk.Frame):
         logging.info("Calendar drawing completed")
     
 
+
     def add_workouts_to_day(self, container, date):
-        """Aggiungi gli allenamenti programmati a un giorno"""
+        """Aggiungi gli allenamenti programmati e le attività a un giorno"""
         # Filtra gli allenamenti per questa data
         day_workouts = [w for w in self.scheduled_workouts if w.get('date') == date]
         
+        # Filtra le attività per questa data (se l'opzione è attiva)
+        day_activities = []
+        if hasattr(self, 'show_activities') and self.show_activities.get() and hasattr(self, 'activities') and self.activities:
+            for activity in self.activities:
+                # Le attività hanno una data in formato "2025-04-29 20:05:43"
+                # Dobbiamo confrontare solo la parte della data (YYYY-MM-DD) con il formato del calendario
+                activity_date = None
+                if 'startTimeLocal' in activity:
+                    # Estrai solo la parte della data (prima dello spazio)
+                    activity_date = activity['startTimeLocal'].split(' ')[0]
+                    
+                # Confronta la data dell'attività con la data del calendario
+                if activity_date == date:
+                    day_activities.append(activity)
+                    logging.debug(f"Aggiunta attività '{activity.get('activityName', 'Sconosciuta')}' per la data {date}")
+        
         # Debug logging
         if day_workouts:
-            logging.info(f"Adding {len(day_workouts)} workouts to {date}")
+            logging.info(f"Aggiunta di {len(day_workouts)} allenamenti per {date}")
             for workout in day_workouts:
-                logging.info(f"  Adding workout: {workout.get('title')} (ID: {workout.get('workoutId')})")
+                logging.info(f"  Aggiunta allenamento: {workout.get('title')} (ID: {workout.get('workoutId')})")
+            
+        if day_activities:
+            logging.info(f"Aggiunta di {len(day_activities)} attività per {date}")
+            for activity in day_activities:
+                activity_name = activity.get('activityName', 'Sconosciuta')
+                activity_id = activity.get('activityId', 'Sconosciuto')
+                logging.info(f"  Aggiunta attività: {activity_name} (ID: {activity_id})")
         
-        # Se non ci sono allenamenti, esci
-        if not day_workouts:
+        # Combina gli elementi (allenamenti prima, poi attività)
+        all_items = day_workouts + day_activities
+        
+        # Se non ci sono elementi, esci
+        if not all_items:
             return
         
-        # Aggiungi al massimo i primi 3 allenamenti, per non sovraffollare
-        for i, workout in enumerate(day_workouts[:3]):
-            # Crea un frame per l'allenamento
-            workout_frame = ttk.Frame(container)
-            workout_frame.pack(fill=tk.X, pady=1)
+        # Aggiungi al massimo i primi 3 elementi, per non sovraffollare
+        for i, item in enumerate(all_items[:3]):
+            # Crea un frame per l'elemento
+            item_frame = ttk.Frame(container)
+            item_frame.pack(fill=tk.X, pady=1)
             
-            # Icona per il tipo di sport
-            sport_type = workout.get('sportTypeKey', 'running')
+            # Determina se è un allenamento o un'attività
+            is_activity = item in day_activities
             
-            # Converto in formato leggibile
-            icon = SPORT_ICONS.get(sport_type, "•")
-            
-            # Tronca il nome se troppo lungo
-            name = workout.get('title', 'Sconosciuto')
-            if len(name) > 25:
-                name = name[:22] + "..."
-            
-            # Etichetta con nome e icona
-            workout_label = ttk.Label(workout_frame, text=f"{icon} {name}", anchor=tk.W)
-            workout_label.pack(fill=tk.X)
-            
-            # Associa evento di click
-            workout_frame.bind("<Button-1>", 
+            if is_activity:
+                # È un'attività
+                activity = item
+                # Determina il tipo di sport
+                sport_type = 'running'  # Default
+                if 'activityType' in activity and 'typeKey' in activity['activityType']:
+                    sport_type = activity['activityType']['typeKey'].lower()
+                
+                # Ottieni il nome dell'attività
+                name = activity.get('activityName', 'Attività sconosciuta')
+                if len(name) > 25:
+                    name = name[:22] + "..."
+                
+                # Stile speciale per le attività (altro colore o icona diversa)
+                icon = SPORT_ICONS.get(sport_type, "•")
+                activity_label = ttk.Label(item_frame, text=f"✓ {icon} {name}", anchor=tk.W, foreground=COLORS["success"])
+                activity_label.pack(fill=tk.X)
+                
+                # Associa evento di click
+                item_frame.bind("<Button-1>", 
+                             lambda e, a=activity: self.show_activity_details(a))
+                activity_label.bind("<Button-1>", 
+                                 lambda e, a=activity: self.show_activity_details(a))
+            else:
+                # È un allenamento programmato (codice esistente)
+                workout = item
+                sport_type = workout.get('sportTypeKey', 'running')
+                icon = SPORT_ICONS.get(sport_type, "•")
+                name = workout.get('title', 'Sconosciuto')
+                
+                if len(name) > 25:
+                    name = name[:22] + "..."
+                
+                workout_label = ttk.Label(item_frame, text=f"{icon} {name}", anchor=tk.W)
+                workout_label.pack(fill=tk.X)
+                
+                # Associa evento di click
+                item_frame.bind("<Button-1>", 
                              lambda e, w=workout: self.show_workout_details(w))
-            workout_label.bind("<Button-1>", 
-                             lambda e, w=workout: self.show_workout_details(w))
+                workout_label.bind("<Button-1>", 
+                                 lambda e, w=workout: self.show_workout_details(w))
         
-        # Se ci sono più di 3 allenamenti, mostra quanti ne mancano
-        if len(day_workouts) > 3:
+        # Se ci sono più di 3 elementi, mostra quanti ne mancano
+        if len(all_items) > 3:
             more_label = ttk.Label(container, 
-                                  text=f"+ altri {len(day_workouts) - 3}...", 
+                                  text=f"+ altri {len(all_items) - 3}...", 
                                   anchor=tk.W)
             more_label.pack(fill=tk.X)
+
+
+    def show_activity_details(self, activity):
+        """Mostra i dettagli di un'attività"""
+        # Creazione di una finestra di dialogo per i dettagli dell'attività
+        details_dialog = tk.Toplevel(self)
+        details_dialog.title("Dettagli attività")
+        details_dialog.geometry("500x400")
+        details_dialog.transient(self)
+        details_dialog.grab_set()
+        
+        # Frame principale con padding
+        main_frame = ttk.Frame(details_dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Intestazione con nome attività
+        activity_name = activity.get('activityName', 'Attività sconosciuta')
+        ttk.Label(main_frame, text=activity_name, style="Heading.TLabel").pack(fill=tk.X, pady=(0, 10))
+        
+        # Griglia per i dettagli
+        details_frame = ttk.Frame(main_frame)
+        details_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # Data e ora
+        start_time_local = activity.get('startTimeLocal', '')
+        ttk.Label(details_frame, text="Data e ora:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10), pady=5)
+        ttk.Label(details_frame, text=start_time_local).grid(row=0, column=1, sticky=tk.W, pady=5)
+        
+        # Tipo di sport
+        sport_type = "Sconosciuto"
+        if 'activityType' in activity and 'typeKey' in activity['activityType']:
+            sport_type = activity['activityType']['typeKey']
+        ttk.Label(details_frame, text="Sport:").grid(row=1, column=0, sticky=tk.W, padx=(0, 10), pady=5)
+        ttk.Label(details_frame, text=sport_type).grid(row=1, column=1, sticky=tk.W, pady=5)
+        
+        # Distanza
+        distance = activity.get('distance', 0)
+        if distance:
+            distance_km = round(distance / 1000, 2)
+            ttk.Label(details_frame, text="Distanza:").grid(row=2, column=0, sticky=tk.W, padx=(0, 10), pady=5)
+            ttk.Label(details_frame, text=f"{distance_km} km").grid(row=2, column=1, sticky=tk.W, pady=5)
+        
+        # Durata
+        duration = activity.get('duration', 0)
+        if duration:
+            # Formatta come ore:minuti:secondi
+            hours = int(duration // 3600)
+            minutes = int((duration % 3600) // 60)
+            seconds = int(duration % 60)
+            
+            if hours > 0:
+                duration_fmt = f"{hours}:{minutes:02d}:{seconds:02d}"
+            else:
+                duration_fmt = f"{minutes:02d}:{seconds:02d}"
+                
+            ttk.Label(details_frame, text="Durata:").grid(row=3, column=0, sticky=tk.W, padx=(0, 10), pady=5)
+            ttk.Label(details_frame, text=duration_fmt).grid(row=3, column=1, sticky=tk.W, pady=5)
+        
+        # Frequenza cardiaca
+        avg_hr = activity.get('averageHR')
+        max_hr = activity.get('maxHR')
+        if avg_hr or max_hr:
+            hr_text = ""
+            if avg_hr:
+                hr_text += f"Media: {avg_hr} bpm"
+            if max_hr:
+                if hr_text:
+                    hr_text += ", "
+                hr_text += f"Max: {max_hr} bpm"
+            
+            ttk.Label(details_frame, text="Frequenza cardiaca:").grid(row=4, column=0, sticky=tk.W, padx=(0, 10), pady=5)
+            ttk.Label(details_frame, text=hr_text).grid(row=4, column=1, sticky=tk.W, pady=5)
+        
+        # Calorie
+        calories = activity.get('calories', 0)
+        if calories:
+            ttk.Label(details_frame, text="Calorie:").grid(row=5, column=0, sticky=tk.W, padx=(0, 10), pady=5)
+            ttk.Label(details_frame, text=f"{calories} kcal").grid(row=5, column=1, sticky=tk.W, pady=5)
+        
+        # Informazioni specifiche per il nuoto
+        if sport_type == 'lap_swimming':
+            # Vasche
+            active_lengths = activity.get('activeLengths')
+            if active_lengths:
+                ttk.Label(details_frame, text="Vasche:").grid(row=6, column=0, sticky=tk.W, padx=(0, 10), pady=5)
+                ttk.Label(details_frame, text=str(active_lengths)).grid(row=6, column=1, sticky=tk.W, pady=5)
+            
+            # SWOLF
+            avg_swolf = activity.get('averageSwolf')
+            if avg_swolf:
+                ttk.Label(details_frame, text="SWOLF medio:").grid(row=7, column=0, sticky=tk.W, padx=(0, 10), pady=5)
+                ttk.Label(details_frame, text=str(avg_swolf)).grid(row=7, column=1, sticky=tk.W, pady=5)
+        
+        # Pulsante per visualizzare su Garmin Connect
+        def open_in_browser():
+            """Apre l'attività in Garmin Connect"""
+            import webbrowser
+            activity_id = activity.get('activityId')
+            if activity_id:
+                url = f"https://connect.garmin.com/modern/activity/{activity_id}"
+                webbrowser.open(url)
+        
+        # Pulsanti
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        garmin_button = ttk.Button(button_frame, text="Visualizza su Garmin Connect", command=open_in_browser)
+        garmin_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        close_button = ttk.Button(button_frame, text="Chiudi", command=details_dialog.destroy)
+        close_button.pack(side=tk.LEFT)
 
     
     def on_day_click(self, date):
@@ -732,6 +1043,7 @@ class CalendarFrame(ttk.Frame):
         if hasattr(self, 'current_workout'):
             del self.current_workout
 
+
     def sync_calendar(self, show_messages=True):
         """Sincronizza il calendario con Garmin Connect"""
         logging.info(f"sync_calendar chiamato: garmin_client è {'presente' if self.garmin_client else 'assente'}")
@@ -802,6 +1114,18 @@ class CalendarFrame(ttk.Frame):
                                           parent=self)
                     raise
                 
+                # Recupera anche le attività
+                logging.info("Recupero delle attività...")
+                try:
+                    self.fetch_activities()
+                except Exception as act_err:
+                    logging.error(f"Errore nel recupero delle attività: {str(act_err)}")
+                    if show_messages:
+                        messagebox.showwarning("Avviso", 
+                                            f"Impossibile recuperare le attività: {str(act_err)}", 
+                                            parent=self)
+                    # Continuiamo comunque, perché gli allenamenti programmati sono più importanti
+                
                 # Aggiorna la lista degli allenamenti disponibili
                 logging.info("Recupero degli allenamenti disponibili...")
                 try:
@@ -818,7 +1142,7 @@ class CalendarFrame(ttk.Frame):
                 logging.info("Aggiornamento grafico del calendario...")
                 try:
                     # Log how many workouts we're going to display
-                    logging.info(f"Drawing calendar with {len(self.scheduled_workouts)} scheduled workouts")
+                    logging.info(f"Drawing calendar with {len(self.scheduled_workouts)} scheduled workouts and {len(self.activities)} activities")
                     self.draw_calendar()
                 except Exception as draw_err:
                     logging.error(f"Errore nel ridisegno del calendario: {str(draw_err)}")
@@ -846,7 +1170,6 @@ class CalendarFrame(ttk.Frame):
                     progress.destroy()
                 except:
                     pass
-
 
     def fetch_scheduled_workouts(self):
         """Ottiene gli allenamenti programmati da Garmin Connect"""
@@ -1077,12 +1400,12 @@ class CalendarFrame(ttk.Frame):
         self.sync_button['state'] = 'normal'
         self.schedule_button['state'] = 'normal'
         self.delete_workout_button['state'] = 'normal'
-        self.test_workout_button['state'] = 'normal'  # Aggiungi questa riga
         
         # Ottieni gli allenamenti (sincronizza sempre in modo silenzioso)
         # Aggiungiamo un breve ritardo per assicurarci che l'interfaccia sia pronta
         self.after(500, lambda: self.sync_calendar(show_messages=False))
 
+    # Modifica al metodo on_logout per rimuovere i pulsanti di debug
     def on_logout(self):
         """Gestisce l'evento di logout"""
         self.garmin_client = None
@@ -1093,7 +1416,6 @@ class CalendarFrame(ttk.Frame):
         self.cancel_button['state'] = 'disabled'
         self.move_button['state'] = 'disabled'
         self.delete_workout_button['state'] = 'disabled'
-        self.test_workout_button['state'] = 'disabled'  # Aggiungi questa riga
 
         # Pulisci i dati
         self.scheduled_workouts = []

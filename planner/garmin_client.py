@@ -45,19 +45,6 @@ class GarminClient():
 
 
   def get_calendar(self, year, month):
-      """
-      Gets the calendar for the specified year and month.
-      
-      Important: The Garmin Connect API uses 0-based month indexing (January = 0),
-      but this function expects 1-based month indexing (January = 1) and converts internally.
-      
-      Args:
-          year (int): The year
-          month (int): The month (1-12)
-          
-      Returns:
-          dict: The calendar data from Garmin Connect
-      """
       if not isinstance(month, int) or month < 1 or month > 12:
           logging.error(f"Invalid month value: {month}. Must be between 1 and 12.")
           raise ValueError(f"Month must be between 1 and 12, got {month}")
@@ -84,6 +71,57 @@ class GarminClient():
           logging.error(f"Error getting calendar for {year}-{month}: {str(e)}")
           raise
 
+  def get_activities(self, start_date=None, end_date=None, limit=20):
+      """
+      Ottiene le attività dell'utente da Garmin Connect.
+      
+      Args:
+          start_date (str, optional): Data di inizio nel formato 'YYYY-MM-DD'
+          end_date (str, optional): Data di fine nel formato 'YYYY-MM-DD'
+          limit (int, optional): Numero massimo di attività da recuperare. Default 20.
+          
+      Returns:
+          list: Lista delle attività
+      """
+      import datetime
+      
+      logging.info(f'Ottengo attività da Garmin Connect. Limit: {limit}')
+      
+      # Se le date non sono specificate, usa gli ultimi 30 giorni
+      if not start_date:
+          start_date = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+      if not end_date:
+          end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+          
+      try:
+          # Utilizziamo l'endpoint corretto con i parametri adeguati
+          # Basato sul codice C# che hai fornito
+          start = 0  # Iniziamo dalla prima pagina
+          
+          # Costruiamo l'URL con i parametri
+          url = '/activitylist-service/activities/search/activities'
+          params = {
+              'startDate': start_date,
+              'endDate': end_date,
+              'start': start,
+              'limit': limit
+          }
+          
+          logging.info(f"Chiamata API attività con parametri: {params}")
+          response = garth.connectapi(url, params=params)
+          
+          if response:
+              logging.info(f"Trovate {len(response)} attività nel periodo {start_date} - {end_date}")
+          else:
+              logging.warning(f"Nessuna attività trovata nel periodo {start_date} - {end_date}")
+              
+          return response
+              
+      except Exception as e:
+          logging.error(f"Errore nel recupero delle attività: {str(e)}")
+          # In caso di errore, ritorniamo una lista vuota invece di propagare l'errore
+          return []
+
   def schedule_workout(self, workout_id, date):
     date_formatted = date
     if type(date_formatted) is not str:
@@ -98,8 +136,8 @@ class GarminClient():
       f'/workout-service/schedule/{schedule_id}', method="DELETE")
     return response 
 
-def cmd_login(args):
-    email = input('Enter email address: ')
-    password = getpass('Enter password: ')
-    garth.login(email, password)
-    garth.save(args.oauth_folder)
+  def cmd_login(args):
+      email = input('Enter email address: ')
+      password = getpass('Enter password: ')
+      garth.login(email, password)
+      garth.save(args.oauth_folder)
