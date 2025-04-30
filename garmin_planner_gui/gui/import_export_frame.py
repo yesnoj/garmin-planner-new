@@ -935,75 +935,58 @@ class ImportExportFrame(ttk.Frame):
             # Lista delle chiavi speciali che non sono allenamenti
             config_keys = ['config', 'athlete_name', 'paces', 'power_values', 'swim_paces', 'heart_rates']
             
-            # CORREZIONE: Salva le sezioni originali da mantenere
-            original_config = {}
-            if 'workout_config' in self.controller.config:
-                original_config = dict(self.controller.config['workout_config'])
-            
-            # CORREZIONE: Crea un dizionario per le sezioni da unire
-            sections_to_merge = {}
-            
             # Estrai la configurazione se presente
             if 'config' in data:
-                # Invece di sovrascrivere, unisci le configurazioni mantenendo i valori originali
-                # dove appropriato
+                # Aggiorna la configurazione
                 new_config = data.pop('config')
                 
                 # Aggiorna in modo sicuro (senza sovrascrivere tutto)
                 if not 'workout_config' in self.controller.config:
                     self.controller.config['workout_config'] = {}
                 
-                # CORREZIONE: Unisci specifiche sezioni solo se richiesto dall'utente
+                # Aggiorna le varie sezioni
                 for section in ['paces', 'speeds', 'swim_paces', 'heart_rates', 'power_values', 'margins']:
                     if section in new_config:
-                        # Salva per unire dopo
-                        sections_to_merge[section] = new_config[section]
+                        # Sostituzione completa invece di aggiornamento per evitare valori predefiniti
+                        self.controller.config['workout_config'][section] = new_config[section]
+                    # Se importiamo da Excel e la sezione non è presente, la rimuoviamo dalla configurazione
+                    elif ext == '.xlsx' and section in self.controller.config['workout_config']:
+                        del self.controller.config['workout_config'][section]
+                        self.write_log(f"Sezione {section} rimossa perché non presente nel file importato")
                 
-                # Per gli altri parametri, aggiornali solo se non esistono o se è richiesto l'overwrite
-                for param in ['name_prefix', 'sport_type', 'athlete_name', 'preferred_days', 'race_day']:
+                # Altri parametri
+                for param in ['name_prefix', 'sport_type', 'athlete_name']:
                     if param in new_config:
-                        if param not in self.controller.config['workout_config'] or overwrite:
-                            self.controller.config['workout_config'][param] = new_config[param]
+                        self.controller.config['workout_config'][param] = new_config[param]
                 
                 self.write_log("Configurazione aggiornata")
             
             # Estrai athlete_name se presente nella radice
             if 'athlete_name' in data:
                 athlete_name = data.pop('athlete_name')
-                # Aggiorna il nome dell'atleta solo se non esistente o se è richiesto l'overwrite
-                if 'athlete_name' not in self.controller.config or overwrite:
-                    # Aggiorna il nome dell'atleta nella configurazione principale
-                    self.controller.config['athlete_name'] = athlete_name
-                    # E anche in workout_config per mantenere la coerenza
-                    if 'workout_config' not in self.controller.config:
-                        self.controller.config['workout_config'] = {}
-                    self.controller.config['workout_config']['athlete_name'] = athlete_name
-                    self.write_log(f"Nome atleta aggiornato: {athlete_name}")
+                # Aggiorna il nome dell'atleta nella configurazione principale
+                self.controller.config['athlete_name'] = athlete_name
+                # E anche in workout_config per mantenere la coerenza
+                if 'workout_config' not in self.controller.config:
+                    self.controller.config['workout_config'] = {}
+                self.controller.config['workout_config']['athlete_name'] = athlete_name
+                self.write_log(f"Nome atleta aggiornato: {athlete_name}")
             
-            # CORREZIONE: Estrai direttamente le sezioni di configurazione dalla radice e aggiornale
-            # solo se i valori non esistono o se è richiesto l'overwrite
+            # Estrai direttamente le sezioni di configurazione dalla radice e aggiornale
             for config_section in ['paces', 'power_values', 'swim_paces', 'speeds', 'heart_rates']:
                 if config_section in data:
                     section_data = data.pop(config_section)
-                    sections_to_merge[config_section] = section_data
-            
-            # CORREZIONE: Ora unisci le sezioni salvate, mantenendo i valori originali dove appropriato
-            for section, values in sections_to_merge.items():
-                # Assicurati che workout_config esista
-                if 'workout_config' not in self.controller.config:
-                    self.controller.config['workout_config'] = {}
-                
-                # Se la sezione non esiste, creala
-                if section not in self.controller.config['workout_config']:
-                    self.controller.config['workout_config'][section] = {}
-                
-                # Unisci i valori
-                for key, value in values.items():
-                    # Aggiorna solo se la chiave non esiste o se è richiesto l'overwrite
-                    if key not in self.controller.config['workout_config'][section] or overwrite:
-                        self.controller.config['workout_config'][section][key] = value
-                
-                self.write_log(f"Sezione {section} aggiornata")
+                    # Assicurati che workout_config esista
+                    if 'workout_config' not in self.controller.config:
+                        self.controller.config['workout_config'] = {}
+                    # Sovrascrive la sezione invece di aggiornare
+                    self.controller.config['workout_config'][config_section] = section_data
+                    self.write_log(f"Sezione {config_section} aggiornata")
+                # Se la sezione non è presente nel file ma è nella configurazione e stiamo importando da Excel,
+                # la rimuoviamo per evitare di mantenere valori predefiniti
+                elif ext == '.xlsx' and 'workout_config' in self.controller.config and config_section in self.controller.config['workout_config']:
+                    del self.controller.config['workout_config'][config_section]
+                    self.write_log(f"Sezione {config_section} rimossa perché non presente nel file importato")
             
             # Conta gli allenamenti
             total_workouts = sum(1 for name in data.keys() if name not in config_keys)
