@@ -12,6 +12,7 @@ import calendar
 import re
 import logging
 from .styles import COLORS, SPORT_ICONS
+import json
 
 class CalendarFrame(ttk.Frame):
     """Frame per la gestione del calendario di allenamenti"""
@@ -60,8 +61,14 @@ class CalendarFrame(ttk.Frame):
                                      command=self.sync_calendar)
         self.sync_button.pack(side=tk.RIGHT, padx=5)
         
+        # Pulsante per creare un allenamento di test
+        self.test_workout_button = ttk.Button(nav_frame, text="Schedule Test Workout", 
+                                          command=self.schedule_test_workout)
+        self.test_workout_button.pack(side=tk.RIGHT, padx=5)
+        
         # Disabilitato fino al login
         self.sync_button['state'] = 'disabled'
+        self.test_workout_button['state'] = 'disabled'
         
         # Frame per il calendario
         calendar_frame = ttk.Frame(main_frame)
@@ -214,6 +221,7 @@ class CalendarFrame(ttk.Frame):
         
         # Disegna il calendario
         self.draw_calendar()
+
     
     def update_date_label(self):
         """Aggiorna l'etichetta con mese e anno correnti"""
@@ -263,6 +271,8 @@ class CalendarFrame(ttk.Frame):
     
     def draw_calendar(self):
         """Disegna il calendario del mese corrente"""
+        logging.info(f"Drawing calendar for {self.current_year}-{self.current_month}")
+        
         # Pulisci il frame attuale
         for widget in self.month_frame.winfo_children():
             widget.destroy()
@@ -275,6 +285,20 @@ class CalendarFrame(ttk.Frame):
         
         # Ottieni il giorno della settimana del primo giorno (0 = lunedì in calendar.monthrange)
         first_weekday = first_day.weekday()
+        
+        # Log workouts that should be in this month for debugging
+        if self.scheduled_workouts:
+            this_month_workouts = []
+            for workout in self.scheduled_workouts:
+                workout_date = workout.get('date', '')
+                if workout_date.startswith(f"{self.current_year}-{self.current_month:02d}-"):
+                    this_month_workouts.append(workout)
+            
+            logging.info(f"Found {len(this_month_workouts)} workouts for {self.current_year}-{self.current_month}")
+            for workout in this_month_workouts:
+                logging.info(f"  Workout in current month: {workout.get('title')} on {workout.get('date')}")
+        else:
+            logging.info("No scheduled workouts found for any month")
         
         # Disegna i giorni
         for day in range(1, num_days + 1):
@@ -315,11 +339,20 @@ class CalendarFrame(ttk.Frame):
             
             # Associa un evento di click al giorno
             day_frame.bind("<Button-1>", lambda e, d=full_date: self.on_day_click(d))
+        
+        logging.info("Calendar drawing completed")
     
+
     def add_workouts_to_day(self, container, date):
-        """Aggiunge gli allenamenti programmati a un giorno"""
+        """Aggiungi gli allenamenti programmati a un giorno"""
         # Filtra gli allenamenti per questa data
         day_workouts = [w for w in self.scheduled_workouts if w.get('date') == date]
+        
+        # Debug logging
+        if day_workouts:
+            logging.info(f"Adding {len(day_workouts)} workouts to {date}")
+            for workout in day_workouts:
+                logging.info(f"  Adding workout: {workout.get('title')} (ID: {workout.get('workoutId')})")
         
         # Se non ci sono allenamenti, esci
         if not day_workouts:
@@ -358,6 +391,7 @@ class CalendarFrame(ttk.Frame):
                                   text=f"+ altri {len(day_workouts) - 3}...", 
                                   anchor=tk.W)
             more_label.pack(fill=tk.X)
+
     
     def on_day_click(self, date):
         """Gestisce il click su un giorno"""
@@ -697,7 +731,7 @@ class CalendarFrame(ttk.Frame):
         # Rimuovi l'allenamento corrente
         if hasattr(self, 'current_workout'):
             del self.current_workout
-    
+
     def sync_calendar(self, show_messages=True):
         """Sincronizza il calendario con Garmin Connect"""
         logging.info(f"sync_calendar chiamato: garmin_client è {'presente' if self.garmin_client else 'assente'}")
@@ -732,7 +766,31 @@ class CalendarFrame(ttk.Frame):
                 progress = None
             
             try:
-                # Aggiorna la lista degli allenamenti programmati
+                # TEST DIRECT CALENDAR ACCESS
+                # Try to get calendar data for the current month
+                current_month = datetime.datetime.now().month
+                current_year = datetime.datetime.now().year
+                
+                logging.info(f"Trying direct calendar access for {current_year}-{current_month}")
+                try:
+                    direct_response = self.garmin_client.get_calendar(current_year, current_month)
+                    logging.info(f"Direct calendar response: {json.dumps(direct_response, indent=2)}")
+                    
+                    # Check if there are any calendar items
+                    calendar_items = direct_response.get('calendarItems', [])
+                    workout_items = [item for item in calendar_items if item.get('itemType') == 'workout']
+                    logging.info(f"Found {len(workout_items)} workout items directly in calendar")
+                    
+                    # Log details of each workout found
+                    for item in workout_items:
+                        workout_id = item.get('workoutId', 'Unknown')
+                        workout_name = item.get('title', 'Untitled')
+                        workout_date = item.get('date', 'No date')
+                        logging.info(f"Found workout: {workout_name} (ID: {workout_id}) on {workout_date}")
+                except Exception as e:
+                    logging.error(f"Error in direct calendar access: {str(e)}")
+                
+                # Now we proceed with the normal scheduled workouts fetch
                 logging.info("Recupero degli allenamenti programmati...")
                 try:
                     self.fetch_scheduled_workouts()
@@ -759,6 +817,8 @@ class CalendarFrame(ttk.Frame):
                 # Ridisegna il calendario
                 logging.info("Aggiornamento grafico del calendario...")
                 try:
+                    # Log how many workouts we're going to display
+                    logging.info(f"Drawing calendar with {len(self.scheduled_workouts)} scheduled workouts")
                     self.draw_calendar()
                 except Exception as draw_err:
                     logging.error(f"Errore nel ridisegno del calendario: {str(draw_err)}")
@@ -786,10 +846,13 @@ class CalendarFrame(ttk.Frame):
                     progress.destroy()
                 except:
                     pass
-    
+
+
     def fetch_scheduled_workouts(self):
         """Ottiene gli allenamenti programmati da Garmin Connect"""
+        logging.info("Starting fetch_scheduled_workouts")
         if not self.garmin_client:
+            logging.error("No Garmin client available")
             return
         
         # Crea una finestra di progresso
@@ -815,42 +878,108 @@ class CalendarFrame(ttk.Frame):
             start_date = datetime.date.today() - datetime.timedelta(days=90)
             end_date = datetime.date.today() + datetime.timedelta(days=365)
             
+            logging.info(f"Searching for workouts from {start_date} to {end_date}")
+            
             self.scheduled_workouts = []
             seen_ids = set()  # Set per tenere traccia degli ID già visti
             
+            # First, let's check if we can get the current month's data directly
+            current_month_date = datetime.date.today()
+            try:
+                logging.info(f"Checking current month: {current_month_date.year}-{current_month_date.month}")
+                current_response = self.garmin_client.get_calendar(current_month_date.year, current_month_date.month)
+                
+                # Log the raw response for debugging
+                logging.debug(f"Current month response: {json.dumps(current_response, indent=2)}")
+                
+                if 'calendarItems' in current_response:
+                    calendar_items = current_response.get('calendarItems', [])
+                    logging.info(f"Current month has {len(calendar_items)} calendar items total")
+                    
+                    workout_items = [item for item in calendar_items if item.get('itemType') == 'workout']
+                    logging.info(f"Current month has {len(workout_items)} workout items")
+                    
+                    # Log details of each workout found
+                    for item in workout_items:
+                        workout_id = item.get('workoutId', 'Unknown')
+                        workout_name = item.get('title', 'Untitled')
+                        workout_date = item.get('date', 'No date')
+                        logging.info(f"Current month workout: {workout_name} (ID: {workout_id}) on {workout_date}")
+                else:
+                    logging.warning("No calendarItems found in the response for current month")
+            except Exception as e:
+                logging.error(f"Error checking current month: {str(e)}")
+            
+            # Now proceed with the regular month-by-month search
             # Ottieni il calendario per ogni mese nel periodo
             current_date = datetime.date(start_date.year, start_date.month, 1)
             end_month = datetime.date(end_date.year, end_date.month, 1)
             
             while current_date <= end_month:
+                logging.info(f"Checking month: {current_date.year}-{current_date.month}")
                 # Ottieni il calendario per questo mese
                 response = self.garmin_client.get_calendar(current_date.year, current_date.month)
                 
                 # Cerca gli allenamenti
-                for item in response.get('calendarItems', []):
-                    if item.get('itemType') == 'workout':
-                        # Controlla se questo ID è già stato visto
-                        item_id = item.get('id')
-                        if item_id not in seen_ids:
-                            seen_ids.add(item_id)
-                            self.scheduled_workouts.append(item)
+                found_workouts = 0  # Reset for this month
+                if 'calendarItems' in response:
+                    calendar_items = response.get('calendarItems', [])
+                    logging.info(f"Month {current_date.year}-{current_date.month} has {len(calendar_items)} calendar items")
+                    
+                    workout_items = [item for item in calendar_items if item.get('itemType') == 'workout']
+                    logging.info(f"Month {current_date.year}-{current_date.month} has {len(workout_items)} workout items")
+                    
+                    for item in calendar_items:
+                        if item.get('itemType') == 'workout':
+                            workout_name = item.get('title', '')
+                            workout_id = item.get('workoutId', None)
+                            schedule_id = item.get('id', None)
+                            schedule_date = item.get('date', None)
+                            
+                            # Controlla se questo ID è già stato visto
+                            item_id = item.get('id')
+                            if item_id not in seen_ids:
+                                seen_ids.add(item_id)
+                                self.scheduled_workouts.append(item)
+                                found_workouts += 1
+                                logging.debug(f"Found workout: {workout_name} (ID: {workout_id}, Schedule ID: {schedule_id}) on {schedule_date}")
+                else:
+                    logging.warning(f"No calendarItems found in the response for {current_date.year}-{current_date.month}")
+                
+                logging.info(f"Found {found_workouts} workouts for {current_date.year}-{current_date.month}")
                 
                 # Passa al mese successivo
                 if current_date.month == 12:
                     current_date = datetime.date(current_date.year + 1, 1, 1)
                 else:
                     current_date = datetime.date(current_date.year, current_date.month + 1, 1)
+                
+                # Se non c'è una data di fine specifica e non sono stati trovati allenamenti in questo mese,
+                # interrompi la ricerca (non ha senso continuare a cercare oltre)
+                if not end_date and found_workouts == 0:
+                    logging.info(f"No workouts found for {current_date.year}-{current_date.month}, stopping search")
+                    break
             
             # Ordina per data
             self.scheduled_workouts.sort(key=lambda x: x.get('date', ''))
+            logging.info(f"Total scheduled workouts found: {len(self.scheduled_workouts)}")
+            
+            # Log some details about what we found
+            if self.scheduled_workouts:
+                for workout in self.scheduled_workouts[:5]:  # Log first 5 for brevity
+                    logging.info(f"Scheduled workout: {workout.get('title')} on {workout.get('date')}")
+                if len(self.scheduled_workouts) > 5:
+                    logging.info(f"... and {len(self.scheduled_workouts) - 5} more workouts")
             
         except Exception as e:
+            logging.error(f"Error in fetch_scheduled_workouts: {str(e)}")
             # Chiudi la finestra di progresso
             progress.destroy()
             raise e
         
         # Chiudi la finestra di progresso
         progress.destroy()
+
         
     def fetch_available_workouts(self):
         """Ottiene gli allenamenti disponibili da Garmin Connect"""
@@ -948,11 +1077,12 @@ class CalendarFrame(ttk.Frame):
         self.sync_button['state'] = 'normal'
         self.schedule_button['state'] = 'normal'
         self.delete_workout_button['state'] = 'normal'
+        self.test_workout_button['state'] = 'normal'  # Aggiungi questa riga
         
         # Ottieni gli allenamenti (sincronizza sempre in modo silenzioso)
         # Aggiungiamo un breve ritardo per assicurarci che l'interfaccia sia pronta
         self.after(500, lambda: self.sync_calendar(show_messages=False))
-    
+
     def on_logout(self):
         """Gestisce l'evento di logout"""
         self.garmin_client = None
@@ -963,6 +1093,7 @@ class CalendarFrame(ttk.Frame):
         self.cancel_button['state'] = 'disabled'
         self.move_button['state'] = 'disabled'
         self.delete_workout_button['state'] = 'disabled'
+        self.test_workout_button['state'] = 'disabled'  # Aggiungi questa riga
 
         # Pulisci i dati
         self.scheduled_workouts = []
@@ -977,6 +1108,106 @@ class CalendarFrame(ttk.Frame):
         
         # Ridisegna il calendario
         self.draw_calendar()
+
+
+    def schedule_test_workout(self):
+        """Function to schedule a test workout for debugging purposes"""
+        if not self.garmin_client:
+            messagebox.showerror("Error", "Must be connected to Garmin Connect", parent=self)
+            return
+        
+        try:
+            # Create a simple test workout
+            from planner.workout import Workout, WorkoutStep, Target
+            
+            # Get today's date
+            today = datetime.date.today().strftime("%Y-%m-%d")
+            
+            # Create a simple test workout
+            test_workout = Workout("running", "Test Workout")
+            
+            # Add a simple warmup step
+            warmup_step = WorkoutStep(
+                1,
+                "warmup",
+                "Warmup",
+                end_condition="time",
+                end_condition_value="5:00"
+            )
+            test_workout.add_step(warmup_step)
+            
+            # Add an interval step
+            interval_step = WorkoutStep(
+                2,
+                "interval",
+                "Interval",
+                end_condition="time",
+                end_condition_value="1:00",
+                target=Target("pace.zone", 3.0, 3.5)
+            )
+            test_workout.add_step(interval_step)
+            
+            # Add a cooldown step
+            cooldown_step = WorkoutStep(
+                3,
+                "cooldown",
+                "Cooldown",
+                end_condition="time",
+                end_condition_value="5:00"
+            )
+            test_workout.add_step(cooldown_step)
+            
+            # Upload the workout to Garmin Connect
+            response = self.garmin_client.add_workout(test_workout)
+            
+            if response and "workoutId" in response:
+                workout_id = response["workoutId"]
+                logging.info(f"Created test workout with ID: {workout_id}")
+                
+                # Schedule the workout for today
+                schedule_response = self.garmin_client.schedule_workout(workout_id, today)
+                logging.info(f"Scheduled test workout response: {schedule_response}")
+                
+                messagebox.showinfo("Success", f"Test workout scheduled for today ({today})", parent=self)
+                
+                # Refresh the calendar
+                self.sync_calendar()
+            else:
+                logging.error(f"Failed to create test workout. Response: {response}")
+                messagebox.showerror("Error", "Failed to create test workout", parent=self)
+        
+        except Exception as e:
+            logging.error(f"Error scheduling test workout: {str(e)}")
+            messagebox.showerror("Error", f"Error scheduling test workout: {str(e)}", parent=self)
+
+    # Add a button to the calendar frame to call this function
+    def add_test_workout_button(self):
+        """Add a test workout button to the calendar frame"""
+        # Add a test workout button below the sync button
+        self.test_workout_button = ttk.Button(self.status_frame, text="Schedule Test Workout", 
+                                           command=self.schedule_test_workout)
+        self.test_workout_button.pack(side=tk.RIGHT, padx=5)
+        
+        # Initially disabled until login
+        self.test_workout_button['state'] = 'disabled'
+        
+        # Add to the on_login method
+        original_on_login = self.on_login
+        
+        def new_on_login(client):
+            original_on_login(client)
+            self.test_workout_button['state'] = 'normal'
+        
+        self.on_login = new_on_login
+        
+        # Add to the on_logout method
+        original_on_logout = self.on_logout
+        
+        def new_on_logout():
+            original_on_logout()
+            self.test_workout_button['state'] = 'disabled'
+        
+        self.on_logout = new_on_logout
 
 
     def delete_workout(self):

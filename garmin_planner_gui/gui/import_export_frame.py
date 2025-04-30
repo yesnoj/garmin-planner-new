@@ -100,7 +100,7 @@ class ImportExportFrame(ttk.Frame):
         # Evento di doppio click
         self.recents_listbox.bind("<Double-1>", self.on_recent_file_select)
         
-        # Sezione log (destra)
+        # Sezione log (destra) - Sostituisce la vecchia sezione informativa
         log_frame = ttk.LabelFrame(right_frame, text="Log operazioni")
         log_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -115,6 +115,19 @@ class ImportExportFrame(ttk.Frame):
         
         # Configura il log
         self.log_text.configure(state=tk.DISABLED)  # Solo lettura
+        
+        # Bottoni per il log
+        log_buttons = ttk.Frame(log_frame)
+        log_buttons.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        # Pulsante per pulire il log
+        ttk.Button(log_buttons, text="Pulisci log", 
+                  command=self.clear_log).pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Pulsante per copiare il log negli appunti
+        ttk.Button(log_buttons, text="Copia negli appunti", 
+                  command=self.copy_log_to_clipboard).pack(side=tk.LEFT, padx=5)
+
     
     def create_yaml_import_tab(self, parent):
         """Crea la scheda per l'importazione da file YAML/JSON"""
@@ -147,17 +160,6 @@ class ImportExportFrame(ttk.Frame):
         # Opzioni di importazione
         options_frame = ttk.LabelFrame(frame, text="Opzioni")
         options_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # Filtro per nome
-        filter_frame = ttk.Frame(options_frame)
-        filter_frame.pack(fill=tk.X, padx=10, pady=(5, 0))
-        
-        ttk.Label(filter_frame, text="Filtro nome:").pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.yaml_filter_var = tk.StringVar()
-        ttk.Entry(filter_frame, textvariable=self.yaml_filter_var, width=20).pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Label(filter_frame, text="(opzionale, supporta regex)").pack(side=tk.LEFT)
         
         # Sovrascrittura
         overwrite_frame = ttk.Frame(options_frame)
@@ -204,18 +206,6 @@ class ImportExportFrame(ttk.Frame):
         options_frame = ttk.LabelFrame(frame, text="Opzioni")
         options_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Tipo di sport
-        sport_frame = ttk.Frame(options_frame)
-        sport_frame.pack(fill=tk.X, padx=10, pady=(5, 0))
-        
-        ttk.Label(sport_frame, text="Tipo di sport:").pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.excel_sport_var = tk.StringVar(value="running")
-        sport_combo = ttk.Combobox(sport_frame, textvariable=self.excel_sport_var, 
-                                  values=["running", "cycling", "swimming"], 
-                                  state="readonly", width=15)
-        sport_combo.pack(side=tk.LEFT)
-        
         # Sovrascrittura
         overwrite_frame = ttk.Frame(options_frame)
         overwrite_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
@@ -234,6 +224,7 @@ class ImportExportFrame(ttk.Frame):
                                   command=self.create_sample_excel)
         sample_button.pack()
     
+
     def create_garmin_import_tab(self, parent):
         """Crea la scheda per l'importazione da Garmin Connect"""
         # Frame principale
@@ -246,7 +237,7 @@ class ImportExportFrame(ttk.Frame):
             "Devi essere connesso al tuo account Garmin Connect per utilizzare questa funzione."
         )
         ttk.Label(frame, text=instructions, wraplength=300, 
-                style="Instructions.TLabel").pack(pady=(0, 10))
+                 style="Instructions.TLabel").pack(pady=(0, 10))
         
         # Stato del login
         status_frame = ttk.Frame(frame)
@@ -320,17 +311,18 @@ class ImportExportFrame(ttk.Frame):
         
         # Disabilitato finché non si effettua il login
         self.garmin_import_button['state'] = 'disabled'
+
     
     def create_yaml_export_tab(self, parent):
-        """Crea la scheda per l'esportazione in file YAML/JSON"""
+        """Crea la scheda per l'esportazione in file JSON"""
         # Frame principale
         frame = ttk.Frame(parent, padding=10)
         frame.pack(fill=tk.BOTH, expand=True)
         
         # Etichetta per le istruzioni
         instructions = (
-            "Esporta allenamenti in un file YAML o JSON.\n"
-            "Puoi esportare tutti gli allenamenti o solo quelli selezionati."
+            "Esporta allenamenti in un file JSON.\n"
+            "Puoi esportare tutti gli allenamenti."
         )
         ttk.Label(frame, text=instructions, wraplength=300, 
                 style="Instructions.TLabel").pack(pady=(0, 10))
@@ -346,35 +338,12 @@ class ImportExportFrame(ttk.Frame):
         file_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         
         browse_button = ttk.Button(file_frame, text="Sfoglia...", 
-                                  command=self.browse_yaml_export_file)
+                                  command=self.browse_json_export_file)
         browse_button.pack(side=tk.LEFT)
         
         # Opzioni di esportazione
         options_frame = ttk.LabelFrame(frame, text="Opzioni")
         options_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # Formato
-        format_frame = ttk.Frame(options_frame)
-        format_frame.pack(fill=tk.X, padx=10, pady=(5, 0))
-        
-        ttk.Label(format_frame, text="Formato:").pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.yaml_format_var = tk.StringVar(value="YAML")
-        format_combo = ttk.Combobox(format_frame, textvariable=self.yaml_format_var, 
-                                   values=["YAML", "JSON"], 
-                                   state="readonly", width=10)
-        format_combo.pack(side=tk.LEFT)
-        
-        # Filtro per nome
-        filter_frame = ttk.Frame(options_frame)
-        filter_frame.pack(fill=tk.X, padx=10, pady=(5, 0))
-        
-        ttk.Label(filter_frame, text="Filtro nome:").pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.yaml_export_filter_var = tk.StringVar()
-        ttk.Entry(filter_frame, textvariable=self.yaml_export_filter_var, width=20).pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Label(filter_frame, text="(opzionale, supporta regex)").pack(side=tk.LEFT)
         
         # Pulizia
         clean_frame = ttk.Frame(options_frame)
@@ -386,7 +355,7 @@ class ImportExportFrame(ttk.Frame):
         
         # Pulsante per l'esportazione
         export_button = ttk.Button(frame, text="Esporta", 
-                                 command=self.export_to_yaml)
+                                 command=self.export_to_json)
         export_button.pack(pady=(0, 10))
     
     def create_excel_export_tab(self, parent):
@@ -421,17 +390,6 @@ class ImportExportFrame(ttk.Frame):
         options_frame = ttk.LabelFrame(frame, text="Opzioni")
         options_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Filtro per nome
-        filter_frame = ttk.Frame(options_frame)
-        filter_frame.pack(fill=tk.X, padx=10, pady=(5, 0))
-        
-        ttk.Label(filter_frame, text="Filtro nome:").pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.excel_export_filter_var = tk.StringVar()
-        ttk.Entry(filter_frame, textvariable=self.excel_export_filter_var, width=20).pack(side=tk.LEFT, padx=(0, 5))
-        
-        ttk.Label(filter_frame, text="(opzionale, supporta regex)").pack(side=tk.LEFT)
-        
         # Includi configurazione
         config_frame = ttk.Frame(options_frame)
         config_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
@@ -453,7 +411,7 @@ class ImportExportFrame(ttk.Frame):
         
         # Etichetta per le istruzioni
         instructions = (
-            "Esporta allenamenti direttamente in Garmin Connect.\n"
+            "Scarica allenamenti direttamente da Garmin Connect.\n"
             "Devi essere connesso al tuo account Garmin Connect per utilizzare questa funzione."
         )
         ttk.Label(frame, text=instructions, wraplength=300, 
@@ -469,8 +427,16 @@ class ImportExportFrame(ttk.Frame):
         status_label = ttk.Label(status_frame, textvariable=self.garmin_export_status_var)
         status_label.pack(side=tk.LEFT)
         
-        # Lista degli allenamenti locali
-        list_frame = ttk.LabelFrame(frame, text="Allenamenti locali")
+        # Pulsante per aggiornare la lista
+        self.export_refresh_button = ttk.Button(status_frame, text="Aggiorna", 
+                                              command=self.refresh_remote_workouts)
+        self.export_refresh_button.pack(side=tk.RIGHT)
+        
+        # Disabilitato finché non si effettua il login
+        self.export_refresh_button['state'] = 'disabled'
+        
+        # Lista degli allenamenti remoti
+        list_frame = ttk.LabelFrame(frame, text="Allenamenti su Garmin Connect")
         list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Filtro
@@ -479,20 +445,20 @@ class ImportExportFrame(ttk.Frame):
         
         ttk.Label(filter_frame, text="Filtro:").pack(side=tk.LEFT, padx=(0, 5))
         
-        self.local_filter_var = tk.StringVar()
-        filter_entry = ttk.Entry(filter_frame, textvariable=self.local_filter_var, width=20)
+        self.remote_filter_var = tk.StringVar()
+        filter_entry = ttk.Entry(filter_frame, textvariable=self.remote_filter_var, width=20)
         filter_entry.pack(side=tk.LEFT, padx=(0, 5))
         
         # Associa evento di modifica del filtro
-        self.local_filter_var.trace_add("write", lambda *args: self.update_local_workout_list())
+        self.remote_filter_var.trace_add("write", lambda *args: self.update_remote_workout_list())
         
         # Lista con checkbox
-        self.local_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, height=10)
-        self.local_listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
+        self.remote_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, height=10)
+        self.remote_listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
         
         # Scrollbar
-        scrollbar = ttk.Scrollbar(self.local_listbox, orient=tk.VERTICAL, command=self.local_listbox.yview)
-        self.local_listbox.configure(yscrollcommand=scrollbar.set)
+        scrollbar = ttk.Scrollbar(self.remote_listbox, orient=tk.VERTICAL, command=self.remote_listbox.yview)
+        self.remote_listbox.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Pulsanti per selezionare/deselezionare tutti
@@ -500,29 +466,18 @@ class ImportExportFrame(ttk.Frame):
         select_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
         
         ttk.Button(select_frame, text="Seleziona tutti", 
-                  command=self.select_all_local).pack(side=tk.LEFT, padx=(0, 5))
+                  command=self.select_all_remote).pack(side=tk.LEFT, padx=(0, 5))
         
         ttk.Button(select_frame, text="Deseleziona tutti", 
-                  command=self.deselect_all_local).pack(side=tk.LEFT)
-        
-        # Opzioni di esportazione
-        options_frame = ttk.LabelFrame(frame, text="Opzioni")
-        options_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        overwrite_frame = ttk.Frame(options_frame)
-        overwrite_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
-        
-        self.garmin_export_overwrite_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(overwrite_frame, text="Sovrascrivi allenamenti esistenti con lo stesso nome", 
-                       variable=self.garmin_export_overwrite_var).pack(side=tk.LEFT)
+                  command=self.deselect_all_remote).pack(side=tk.LEFT)
         
         # Pulsante per l'esportazione
-        self.garmin_export_button = ttk.Button(frame, text="Esporta selezionati", 
-                                             command=self.export_to_garmin)
-        self.garmin_export_button.pack()
+        self.download_button = ttk.Button(frame, text="Scarica selezionati", 
+                                         command=self.download_selected_workouts)
+        self.download_button.pack()
         
         # Disabilitato finché non si effettua il login
-        self.garmin_export_button['state'] = 'disabled'
+        self.download_button['state'] = 'disabled'
     
     def write_log(self, message):
         """Scrive un messaggio nel log"""
@@ -547,6 +502,23 @@ class ImportExportFrame(ttk.Frame):
         # Aggiorna l'interfaccia
         self.update_idletasks()
     
+
+    def clear_log(self):
+        """Pulisce il log"""
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.delete(1.0, tk.END)
+        self.log_text.configure(state=tk.DISABLED)
+
+    def copy_log_to_clipboard(self):
+        """Copia il contenuto del log negli appunti"""
+        log_content = self.log_text.get(1.0, tk.END)
+        self.clipboard_clear()
+        self.clipboard_append(log_content)
+        messagebox.showinfo("Copia negli appunti", 
+                           "Il contenuto del log è stato copiato negli appunti", 
+                           parent=self)
+
+
     def browse_yaml_file(self):
         """Apre un selettore di file per scegliere un file YAML/JSON"""
         filetypes = [
@@ -578,20 +550,12 @@ class ImportExportFrame(ttk.Frame):
             self.excel_file_var.set(filename)
             self.add_to_recent_files(filename)
     
-    def browse_yaml_export_file(self):
-        """Apre un selettore di file per scegliere dove salvare il file YAML/JSON"""
-        # Determina l'estensione predefinita in base al formato
-        if self.yaml_format_var.get() == "YAML":
-            default_ext = ".yaml"
-            filetypes = [("File YAML", "*.yaml *.yml"), ("Tutti i file", "*.*")]
-        else:
-            default_ext = ".json"
-            filetypes = [("File JSON", "*.json"), ("Tutti i file", "*.*")]
-        
+    def browse_json_export_file(self):
+        """Apre un selettore di file per scegliere dove salvare il file JSON"""
         filename = filedialog.asksaveasfilename(
             title="Salva file", 
-            defaultextension=default_ext,
-            filetypes=filetypes
+            defaultextension=".json",
+            filetypes=[("File JSON", "*.json"), ("Tutti i file", "*.*")]
         )
         
         if filename:
@@ -681,13 +645,10 @@ class ImportExportFrame(ttk.Frame):
             return
         
         # Ottieni le opzioni
-        filter_name = self.yaml_filter_var.get().strip()
         overwrite = self.yaml_overwrite_var.get()
         
         # Log
         self.write_log(f"Importazione da {filename}")
-        if filter_name:
-            self.write_log(f"Filtro nome: {filter_name}")
         
         try:
             # Determina il tipo di file
@@ -771,11 +732,6 @@ class ImportExportFrame(ttk.Frame):
                 # Salta le chiavi di configurazione
                 if name in config_keys:
                     continue
-                    
-                # Filtra per nome
-                if filter_name and not re.search(filter_name, name, re.IGNORECASE):
-                    skipped_workouts += 1
-                    continue
                 
                 # Verifica se esiste già
                 if name in current_names:
@@ -831,12 +787,10 @@ class ImportExportFrame(ttk.Frame):
             return
         
         # Ottieni le opzioni
-        sport_type = self.excel_sport_var.get()
         overwrite = self.excel_overwrite_var.get()
         
         # Log
         self.write_log(f"Importazione da {filename}")
-        self.write_log(f"Tipo di sport: {sport_type}")
         
         try:
             # Importa il file Excel
@@ -847,7 +801,8 @@ class ImportExportFrame(ttk.Frame):
             with tempfile.NamedTemporaryFile(suffix='.yaml', delete=False) as tmp:
                 tmp_filename = tmp.name
             
-            # Converti da Excel a YAML
+            # Converti da Excel a YAML - usiamo il tipo di sport predefinito dalla configurazione
+            sport_type = self.controller.config.get('workout_config', {}).get('sport_type', 'running')
             yaml_data = excel_to_yaml(filename, tmp_filename, sport_type)
             
             # Ora importa dal file YAML
@@ -995,8 +950,8 @@ class ImportExportFrame(ttk.Frame):
             return
         
         try:
-            # Ottieni il tipo di sport
-            sport_type = self.excel_sport_var.get()
+            # Usa il tipo di sport di default dalla configurazione
+            sport_type = self.controller.config.get('workout_config', {}).get('sport_type', 'running')
 
             # Log
             self.write_log(f"Creazione file di esempio {filename}")
@@ -1081,6 +1036,55 @@ class ImportExportFrame(ttk.Frame):
         finally:
             # Chiudi la finestra di progresso
             progress.destroy()
+
+    def refresh_remote_workouts(self):
+        """Aggiorna la lista degli allenamenti remoti per la scheda di esportazione"""
+        if not self.garmin_client:
+            messagebox.showerror("Errore", 
+                              "Devi essere connesso a Garmin Connect", 
+                              parent=self)
+            return
+        
+        # Log
+        self.write_log("Aggiornamento lista allenamenti remoti da Garmin Connect")
+        
+        # Crea una finestra di progresso
+        progress = tk.Toplevel(self)
+        progress.title("Caricamento in corso")
+        progress.geometry("300x100")
+        progress.transient(self)
+        progress.grab_set()
+        
+        # Etichetta
+        ttk.Label(progress, text="Recupero allenamenti remoti...").pack(pady=(20, 10))
+        
+        # Barra di progresso
+        progressbar = ttk.Progressbar(progress, mode='indeterminate')
+        progressbar.pack(fill=tk.X, padx=20)
+        progressbar.start()
+        
+        # Aggiorna la finestra
+        progress.update()
+        
+        try:
+            # Ottieni la lista degli allenamenti remoti
+            self.remote_workouts = self.garmin_client.list_workouts()
+            
+            # Aggiorna la lista
+            self.update_remote_workout_list()
+            
+            # Log
+            self.write_log(f"{len(self.remote_workouts)} allenamenti remoti trovati")
+            
+        except Exception as e:
+            messagebox.showerror("Errore", 
+                              f"Impossibile ottenere gli allenamenti remoti: {str(e)}", 
+                              parent=self)
+            self.write_log(f"Errore: {str(e)}")
+        
+        finally:
+            # Chiudi la finestra di progresso
+            progress.destroy()
     
     def update_garmin_workout_list(self):
         """Aggiorna la lista degli allenamenti disponibili su Garmin Connect"""
@@ -1108,6 +1112,33 @@ class ImportExportFrame(ttk.Frame):
             
             # Aggiungi alla lista
             self.garmin_listbox.insert(tk.END, f"{name} ({sport_type})")
+
+    def update_remote_workout_list(self):
+        """Aggiorna la lista degli allenamenti remoti"""
+        # Pulisci la lista
+        self.remote_listbox.delete(0, tk.END)
+        
+        # Se non ci sono allenamenti remoti, esci
+        if not hasattr(self, 'remote_workouts') or not self.remote_workouts:
+            return
+        
+        # Filtra gli allenamenti
+        filter_text = self.remote_filter_var.get().lower()
+        
+        # Aggiungi gli allenamenti filtrati
+        for workout in self.remote_workouts:
+            # Ottieni il nome
+            name = workout.get('workoutName', '')
+            
+            # Filtra per testo
+            if filter_text and filter_text not in name.lower():
+                continue
+            
+            # Formatta il tipo di sport
+            sport_type = workout.get('sportType', {}).get('sportTypeKey', 'running')
+            
+            # Aggiungi alla lista
+            self.remote_listbox.insert(tk.END, f"{name} ({sport_type})")
     
     def select_all_garmin(self):
         """Seleziona tutti gli allenamenti nella lista Garmin"""
@@ -1116,6 +1147,14 @@ class ImportExportFrame(ttk.Frame):
     def deselect_all_garmin(self):
         """Deseleziona tutti gli allenamenti nella lista Garmin"""
         self.garmin_listbox.selection_clear(0, tk.END)
+
+    def select_all_remote(self):
+        """Seleziona tutti gli allenamenti nella lista remota"""
+        self.remote_listbox.selection_set(0, tk.END)
+    
+    def deselect_all_remote(self):
+        """Deseleziona tutti gli allenamenti nella lista remota"""
+        self.remote_listbox.selection_clear(0, tk.END)
     
     def import_from_garmin(self):
         """Importa allenamenti selezionati da Garmin Connect"""
@@ -1239,8 +1278,8 @@ class ImportExportFrame(ttk.Frame):
         # Utilizza la funzione già definita nell'editor di allenamenti
         return self.controller.workout_editor_frame.convert_garmin_to_internal(workout_detail)
     
-    def export_to_yaml(self):
-        """Esporta allenamenti in un file YAML/JSON"""
+    def export_to_json(self):
+        """Esporta allenamenti in un file JSON"""
         # Ottieni il nome del file
         filename = self.yaml_export_file_var.get().strip()
         if not filename:
@@ -1250,27 +1289,15 @@ class ImportExportFrame(ttk.Frame):
             return
         
         # Ottieni le opzioni
-        format_type = self.yaml_format_var.get()
-        filter_name = self.yaml_export_filter_var.get().strip()
         clean = self.yaml_clean_var.get()
         
         # Log
         self.write_log(f"Esportazione in {filename}")
-        self.write_log(f"Formato: {format_type}")
-        if filter_name:
-            self.write_log(f"Filtro nome: {filter_name}")
+        self.write_log(f"Formato: JSON")
         
         try:
             # Ottieni gli allenamenti
             workouts = self.controller.workout_editor_frame.workouts
-            
-            # Filtra gli allenamenti
-            if filter_name:
-                filtered_workouts = []
-                for name, steps in workouts:
-                    if re.search(filter_name, name, re.IGNORECASE):
-                        filtered_workouts.append((name, steps))
-                workouts = filtered_workouts
             
             # Se non ci sono allenamenti, mostra un errore
             if not workouts:
@@ -1288,7 +1315,7 @@ class ImportExportFrame(ttk.Frame):
                 config = dict(self.controller.config['workout_config'])
                 
                 # Escludi i valori paces, power_values e swim_paces dalla config
-                # e mettili come chiavi principali del YAML
+                # e mettili come chiavi principali del JSON
                 if 'paces' in config:
                     export_data['paces'] = config.pop('paces')
                 
@@ -1320,12 +1347,9 @@ class ImportExportFrame(ttk.Frame):
                 else:
                     export_data[name] = steps
             
-            # Esporta nel file
+            # Esporta nel file JSON
             with open(filename, 'w', encoding='utf-8') as f:
-                if format_type == "YAML":
-                    yaml.dump(export_data, f, default_flow_style=False)
-                else:  # JSON
-                    json.dump(export_data, f, indent=2)
+                json.dump(export_data, f, indent=2)
             
             # Aggiungi ai file recenti
             self.add_to_recent_files(filename)
@@ -1355,25 +1379,14 @@ class ImportExportFrame(ttk.Frame):
             return
         
         # Ottieni le opzioni
-        filter_name = self.excel_export_filter_var.get().strip()
         include_config = self.excel_include_config_var.get()
         
         # Log
         self.write_log(f"Esportazione in {filename}")
-        if filter_name:
-            self.write_log(f"Filtro nome: {filter_name}")
         
         try:
             # Ottieni gli allenamenti
             workouts = self.controller.workout_editor_frame.workouts
-            
-            # Filtra gli allenamenti
-            if filter_name:
-                filtered_workouts = []
-                for name, steps in workouts:
-                    if re.search(filter_name, name, re.IGNORECASE):
-                        filtered_workouts.append((name, steps))
-                workouts = filtered_workouts
             
             # Se non ci sono allenamenti, mostra un errore
             if not workouts:
@@ -1458,47 +1471,8 @@ class ImportExportFrame(ttk.Frame):
                                parent=self)
             self.write_log(f"Errore: {str(e)}")
     
-    def update_local_workout_list(self):
-        """Aggiorna la lista degli allenamenti locali"""
-        # Pulisci la lista
-        self.local_listbox.delete(0, tk.END)
-        
-        # Ottieni gli allenamenti dall'editor
-        workouts = self.controller.workout_editor_frame.workouts
-        
-        # Se non ci sono allenamenti, esci
-        if not workouts:
-            return
-        
-        # Filtra gli allenamenti
-        filter_text = self.local_filter_var.get().lower()
-        
-        # Aggiungi gli allenamenti filtrati
-        for name, steps in workouts:
-            # Filtra per testo
-            if filter_text and filter_text not in name.lower():
-                continue
-            
-            # Estrai il tipo di sport dagli step
-            sport_type = "running"  # Default
-            for step in steps:
-                if isinstance(step, dict) and 'sport_type' in step:
-                    sport_type = step['sport_type']
-                    break
-            
-            # Aggiungi alla lista
-            self.local_listbox.insert(tk.END, f"{name} ({sport_type})")
-    
-    def select_all_local(self):
-        """Seleziona tutti gli allenamenti nella lista locale"""
-        self.local_listbox.selection_set(0, tk.END)
-    
-    def deselect_all_local(self):
-        """Deseleziona tutti gli allenamenti nella lista locale"""
-        self.local_listbox.selection_clear(0, tk.END)
-    
-    def export_to_garmin(self):
-        """Esporta allenamenti selezionati a Garmin Connect"""
+    def download_selected_workouts(self):
+        """Scarica gli allenamenti selezionati da Garmin Connect"""
         if not self.garmin_client:
             messagebox.showerror("Errore", 
                                "Devi essere connesso a Garmin Connect", 
@@ -1506,28 +1480,25 @@ class ImportExportFrame(ttk.Frame):
             return
         
         # Ottieni gli allenamenti selezionati
-        selection = self.local_listbox.curselection()
+        selection = self.remote_listbox.curselection()
         if not selection:
             messagebox.showwarning("Nessuna selezione", 
-                                 "Seleziona almeno un allenamento da esportare", 
+                                 "Seleziona almeno un allenamento da scaricare", 
                                  parent=self)
             return
         
-        # Ottieni le opzioni
-        overwrite = self.garmin_export_overwrite_var.get()
-        
         # Log
-        self.write_log(f"Esportazione di {len(selection)} allenamenti in Garmin Connect")
+        self.write_log(f"Scaricamento di {len(selection)} allenamenti da Garmin Connect")
         
         # Crea una finestra di progresso
         progress = tk.Toplevel(self)
-        progress.title("Esportazione in corso")
+        progress.title("Scaricamento in corso")
         progress.geometry("400x150")
         progress.transient(self)
         progress.grab_set()
         
         # Etichetta
-        status_var = tk.StringVar(value="Esportazione in corso...")
+        status_var = tk.StringVar(value="Scaricamento in corso...")
         status_label = ttk.Label(progress, textvariable=status_var)
         status_label.pack(pady=(20, 10))
         
@@ -1539,94 +1510,67 @@ class ImportExportFrame(ttk.Frame):
         progress.update()
         
         try:
-            # Ottieni la lista degli allenamenti
-            workouts = self.controller.workout_editor_frame.workouts
-            
-            # Se ci sono allenamenti da sovrascrivere, ottieni la lista degli esistenti
-            existing_workouts = {}
-            if overwrite:
-                try:
-                    garmin_workouts = self.garmin_client.list_workouts()
-                    for workout in garmin_workouts:
-                        existing_workouts[workout.get('workoutName')] = workout.get('workoutId')
-                except Exception as e:
-                    self.write_log(f"Errore nel recupero degli allenamenti esistenti: {str(e)}")
+            # Ottieni gli allenamenti correnti dall'editor
+            current_workouts = self.controller.workout_editor_frame.workouts
+            current_names = [name for name, _ in current_workouts]
             
             # Contatori
-            exported = 0
+            downloaded = 0
             updated = 0
+            skipped = 0
             errors = 0
             
-            # Esporta gli allenamenti selezionati
+            # Scarica gli allenamenti selezionati
             for i, index in enumerate(selection):
                 try:
-                    # Ottieni l'allenamento
-                    workout_text = self.local_listbox.get(index)
-                    # Estrai il nome dal testo
-                    name = workout_text.split(' (')[0]
-                    
                     # Aggiorna lo stato
-                    status_var.set(f"Esportazione {i+1}/{len(selection)}: {name}")
+                    workout = self.remote_workouts[index]
+                    name = workout.get('workoutName', '')
+                    status_var.set(f"Scaricamento {i+1}/{len(selection)}: {name}")
                     progressbar['value'] = i
                     progress.update()
                     
-                    # Trova l'allenamento nella lista
-                    workout_steps = None
-                    for workout_name, steps in workouts:
-                        if workout_name == name:
-                            workout_steps = steps
-                            break
+                    # Ottieni i dettagli dell'allenamento
+                    workout_id = workout.get('workoutId')
+                    workout_detail = self.garmin_client.get_workout(workout_id)
                     
-                    if not workout_steps:
-                        # Impossibile trovare l'allenamento
-                        errors += 1
-                        self.write_log(f"Errore: impossibile trovare l'allenamento '{name}'")
-                        continue
-                    
-                    # Estrai il tipo di sport dagli step
-                    sport_type = "running"  # Default
-                    for step in workout_steps:
-                        if isinstance(step, dict) and 'sport_type' in step:
-                            sport_type = step['sport_type']
-                            break
-                    
-                    # Crea l'allenamento per Garmin
-                    from planner.workout import Workout
-                    workout = Workout(sport_type, name)
-                    
-                    # Converti gli step
-                    workout = self.controller.workout_editor_frame.convert_steps_to_workout(workout, workout_steps)
+                    # Converti in formato interno
+                    steps = self.convert_garmin_to_internal(workout_detail)
                     
                     # Verifica se esiste già
-                    if name in existing_workouts and overwrite:
+                    if name in current_names:
                         # Aggiorna l'allenamento esistente
-                        self.garmin_client.update_workout(existing_workouts[name], workout)
+                        idx = current_names.index(name)
+                        current_workouts[idx] = (name, steps)
                         updated += 1
-                        self.write_log(f"Allenamento aggiornato in Garmin Connect: {name}")
+                        self.write_log(f"Allenamento aggiornato: {name}")
                     else:
-                        # Crea un nuovo allenamento
-                        self.garmin_client.add_workout(workout)
-                        exported += 1
-                        self.write_log(f"Allenamento esportato in Garmin Connect: {name}")
+                        # Aggiungi il nuovo allenamento
+                        current_workouts.append((name, steps))
+                        downloaded += 1
+                        self.write_log(f"Allenamento scaricato: {name}")
                 
                 except Exception as e:
                     # Log dell'errore
                     errors += 1
-                    self.write_log(f"Errore nell'esportazione di '{name}': {str(e)}")
+                    self.write_log(f"Errore nel download di '{name}': {str(e)}")
+            
+            # Aggiorna la lista degli allenamenti
+            self.controller.workout_editor_frame.refresh_workout_list()
             
             # Mostra un messaggio di conferma
-            messagebox.showinfo("Esportazione completata", 
-                              f"Esportati {exported} allenamenti.\n"
+            messagebox.showinfo("Download completato", 
+                              f"Scaricati {downloaded} allenamenti.\n"
                               f"Aggiornati {updated} allenamenti.\n"
                               f"Errori: {errors}", 
                               parent=self)
             
             # Log
-            self.write_log(f"Esportazione completata: {exported} esportati, {updated} aggiornati, {errors} errori")
+            self.write_log(f"Download completato: {downloaded} scaricati, {updated} aggiornati, {errors} errori")
             
         except Exception as e:
             messagebox.showerror("Errore", 
-                               f"Errore durante l'esportazione: {str(e)}", 
+                               f"Errore durante il download: {str(e)}", 
                                parent=self)
             self.write_log(f"Errore: {str(e)}")
         
@@ -1645,10 +1589,12 @@ class ImportExportFrame(ttk.Frame):
         # Abilita i pulsanti
         self.garmin_refresh_button['state'] = 'normal'
         self.garmin_import_button['state'] = 'normal'
-        self.garmin_export_button['state'] = 'normal'
+        self.export_refresh_button['state'] = 'normal'
+        self.download_button['state'] = 'normal'
         
-        # Aggiorna la lista degli allenamenti locali
-        self.update_local_workout_list()
+        # Aggiorna le liste degli allenamenti
+        self.refresh_garmin_workouts()
+        self.refresh_remote_workouts()
         
         # Log
         self.write_log("Connesso a Garmin Connect")
@@ -1664,12 +1610,17 @@ class ImportExportFrame(ttk.Frame):
         # Disabilita i pulsanti
         self.garmin_refresh_button['state'] = 'disabled'
         self.garmin_import_button['state'] = 'disabled'
-        self.garmin_export_button['state'] = 'disabled'
+        self.export_refresh_button['state'] = 'disabled'
+        self.download_button['state'] = 'disabled'
         
         # Pulisci le liste
         self.garmin_listbox.delete(0, tk.END)
         if hasattr(self, 'garmin_workouts'):
             del self.garmin_workouts
+        
+        self.remote_listbox.delete(0, tk.END)
+        if hasattr(self, 'remote_workouts'):
+            del self.remote_workouts
         
         # Log
         self.write_log("Disconnesso da Garmin Connect")

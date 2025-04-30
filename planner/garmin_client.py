@@ -43,11 +43,46 @@ class GarminClient():
     print(response)
     return response 
 
+
   def get_calendar(self, year, month):
-    logging.info(f'getting calendar. Year: {year}, month: {month}')
-    response = garth.connectapi(
-        f'/calendar-service/year/{year}/month/{month-1}')
-    return response 
+      """
+      Gets the calendar for the specified year and month.
+      
+      Important: The Garmin Connect API uses 0-based month indexing (January = 0),
+      but this function expects 1-based month indexing (January = 1) and converts internally.
+      
+      Args:
+          year (int): The year
+          month (int): The month (1-12)
+          
+      Returns:
+          dict: The calendar data from Garmin Connect
+      """
+      if not isinstance(month, int) or month < 1 or month > 12:
+          logging.error(f"Invalid month value: {month}. Must be between 1 and 12.")
+          raise ValueError(f"Month must be between 1 and 12, got {month}")
+      
+      # Garmin API uses 0-based month indexing, so January = 0
+      garmin_month = month - 1
+      
+      logging.info(f'getting calendar. Year: {year}, month: {month} (Garmin month index: {garmin_month})')
+      
+      try:
+          response = garth.connectapi(
+              f'/calendar-service/year/{year}/month/{garmin_month}')
+          
+          # Add some debugging information
+          if response and 'calendarItems' in response:
+              calendar_items = response.get('calendarItems', [])
+              workout_items = [item for item in calendar_items if item.get('itemType') == 'workout']
+              logging.info(f"Calendar response for {year}-{month} contains {len(calendar_items)} items total, {len(workout_items)} workouts")
+          else:
+              logging.warning(f"Calendar response for {year}-{month} does not contain 'calendarItems' key")
+              
+          return response
+      except Exception as e:
+          logging.error(f"Error getting calendar for {year}-{month}: {str(e)}")
+          raise
 
   def schedule_workout(self, workout_id, date):
     date_formatted = date
