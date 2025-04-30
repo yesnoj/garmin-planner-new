@@ -1149,7 +1149,7 @@ class WorkoutEditorFrame(ttk.Frame):
         # Crea un dialog personalizzato
         sync_dialog = tk.Toplevel(self)
         sync_dialog.title("Sincronizza con Garmin Connect")
-        sync_dialog.geometry("400x350")  # Aumentato l'altezza per la nuova opzione
+        sync_dialog.geometry("400x350")  # Dimensioni adeguate per il dialog
         sync_dialog.transient(self)
         sync_dialog.grab_set()
         
@@ -1168,8 +1168,8 @@ class WorkoutEditorFrame(ttk.Frame):
         ttk.Radiobutton(sync_dialog, text="Scarica allenamenti da Garmin Connect", 
                        variable=sync_var, value=3).pack(anchor=tk.W, padx=20, pady=5)
         
-        # NUOVO: Opzione per rimuovere date pianificate
-        ttk.Radiobutton(sync_dialog, text="Rimuovi date dagli allenamenti selezionati", 
+        # MODIFICATO: Modifica opzione 4 per rimuovere dalla pianificazione invece di rimuovere date
+        ttk.Radiobutton(sync_dialog, text="Rimuovi da pianificazione Garmin Connect", 
                        variable=sync_var, value=4).pack(anchor=tk.W, padx=20, pady=5)
         
         # Separatore per chiarezza visiva
@@ -1223,9 +1223,151 @@ class WorkoutEditorFrame(ttk.Frame):
             # Scarica allenamenti
             self.download_workouts()
         elif result["action"] == 4:
-            # NUOVO: Rimuovi date dagli allenamenti selezionati
-            self.clear_workout_dates()
+            # MODIFICATO: Rimuovi dalla pianificazione Garmin Connect invece di rimuovere date
+            self.unschedule_workouts_from_garmin()
 
+
+    def unschedule_workouts_from_garmin(self):
+        """Rimuove gli allenamenti selezionati dalla pianificazione su Garmin Connect"""
+        if not self.garmin_client:
+            messagebox.showerror("Errore", 
+                              "Devi essere connesso a Garmin Connect", 
+                              parent=self)
+            return
+
+        # Verifica che ci siano allenamenti selezionati
+        selection = self.workout_tree.selection()
+        if not selection:
+            messagebox.showwarning("Nessuna selezione", 
+                                 "Seleziona almeno un allenamento da rimuovere dalla pianificazione Garmin Connect.", 
+                                 parent=self)
+            return
+        
+        # Chiedi conferma
+        num_selected = len(selection)
+        if not messagebox.askyesno("Conferma", 
+                                f"Vuoi rimuovere {num_selected} allenamenti dalla pianificazione su Garmin Connect?\n\n"
+                                f"Nota: questo NON rimuoverà le date dagli allenamenti locali, ma solo da Garmin Connect.",
+                                parent=self):
+            return
+        
+        # Crea una finestra di progresso
+        progress_window = tk.Toplevel(self)
+        progress_window.title("Rimozione pianificazione in corso")
+        progress_window.geometry("400x150")
+        progress_window.transient(self)
+        progress_window.grab_set()
+        
+        # Label per lo stato
+        status_var = tk.StringVar(value="Rimozione in corso...")
+        status_label = ttk.Label(progress_window, textvariable=status_var)
+        status_label.pack(pady=(20, 10))
+        
+        # Barra di progresso
+        progress = ttk.Progressbar(progress_window, mode='determinate', length=300, maximum=len(selection))
+        progress.pack(pady=10)
+        
+        # Aggiorna la finestra
+        progress_window.update()
+        
+        try:
+            # Ottieni date e nomi degli allenamenti selezionati
+            selected_workouts = []
+            for item in selection:
+                index = self.workout_tree.index(item)
+                if index < len(self.workouts):
+                    name, steps = self.workouts[index]
+                    # Cerca la data tra i passi dell'allenamento
+                    workout_date = None
+                    for step in steps:
+                        if isinstance(step, dict) and 'date' in step:
+                            workout_date = step['date']
+                            break
+                    
+                    if workout_date:
+                        selected_workouts.append((name, workout_date))
+            
+            if not selected_workouts:
+                messagebox.showwarning("Nessuna data", 
+                                     "Gli allenamenti selezionati non hanno date pianificate.", 
+                                     parent=self)
+                progress_window.destroy()
+                return
+            
+            # Inizializza contatori
+            success_count = 0
+            error_count = 0
+            
+            # Per ogni data, ottenere il calendario di Garmin e cercare l'allenamento
+            for i, (workout_name, workout_date) in enumerate(selected_workouts):
+                try:
+                    # Aggiorna status
+                    status_var.set(f"Elaborazione {i+1}/{len(selected_workouts)}: {workout_name}")
+                    progress['value'] = i
+                    progress_window.update()
+                    
+                    # Converti la data in oggetto datetime
+                    if isinstance(workout_date, str):
+                        date_obj = datetime.datetime.strptime(workout_date, "%Y-%m-%d").date()
+                    else:
+                        date_obj = workout_date
+                    
+                    # Ottieni l'anno e il mese
+                    year = date_obj.year
+                    month = date_obj.month
+                    
+                    # Ottieni il calendario per questo mese
+                    response = self.garmin_client.get_calendar(year, month)
+                    
+                    # Cerca gli allenamenti pianificati
+                    found = False
+                    calendar_items = response.get('calendarItems', [])
+                    for item in calendar_items:
+                        if (item.get('itemType', '') == 'workout' and 
+                            item.get('date') == workout_date and 
+                            item.get('title') == workout_name):
+                            
+                            # Trovato l'allenamento, ottengo l'ID di pianificazione
+                            schedule_id = item.get('id')
+                            
+                            if schedule_id:
+                                # Rimuovo la pianificazione
+                                self.garmin_client.unschedule_workout(schedule_id)
+                                success_count += 1
+                                found = True
+                                
+                                # Aggiorna status
+                                status_var.set(f"Rimosso {workout_name} dal {workout_date}")
+                                progress_window.update()
+                                break
+                    
+                    if not found:
+                        logging.warning(f"Allenamento {workout_name} per {workout_date} non trovato su Garmin Connect")
+                        error_count += 1
+                    
+                except Exception as e:
+                    logging.error(f"Errore nella rimozione di {workout_name}: {str(e)}")
+                    error_count += 1
+            
+            # Mostra risultato finale
+            if error_count == 0:
+                messagebox.showinfo("Operazione completata", 
+                                   f"Rimossi con successo {success_count} allenamenti dalla pianificazione Garmin Connect.", 
+                                   parent=self)
+            else:
+                messagebox.showwarning("Completato con errori", 
+                                     f"Rimossi {success_count} allenamenti. Si sono verificati {error_count} errori.\n"
+                                     f"Controlla il log per i dettagli.", 
+                                     parent=self)
+            
+        except Exception as e:
+            logging.error(f"Errore generale nella rimozione delle pianificazioni: {str(e)}")
+            messagebox.showerror("Errore", 
+                               f"Si è verificato un errore durante la rimozione delle pianificazioni:\n{str(e)}", 
+                               parent=self)
+        finally:
+            # Chiudi la finestra di progresso
+            progress_window.destroy()
         
     def upload_all_workouts(self, replace=False):
         """Carica tutti gli allenamenti su Garmin Connect"""
@@ -2564,6 +2706,7 @@ class WorkoutEditorFrame(ttk.Frame):
         properties_frame.columnconfigure(1, weight=1)
         properties_frame.columnconfigure(5, weight=2)
         
+        # Frame per la pianificazione
         planning_frame = ttk.LabelFrame(parent, text="Opzioni di pianificazione")
         planning_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
         
@@ -2594,6 +2737,9 @@ class WorkoutEditorFrame(ttk.Frame):
         
         days_of_week = [("L", 0), ("M", 1), ("M", 2), ("G", 3), ("V", 4), ("S", 5), ("D", 6)]
         
+        # Determina il numero massimo di sessioni per settimana (per i valori iniziali)
+        max_sessions = self.determine_max_sessions_per_week()
+        
         # Crea variabili e checkbox per ogni giorno
         self.preferred_days_vars = {}
         
@@ -2601,20 +2747,26 @@ class WorkoutEditorFrame(ttk.Frame):
             var = tk.BooleanVar(value=False)
             self.preferred_days_vars[day_value] = var  # 0 = Lunedì, 6 = Domenica
             
-            cb = ttk.Checkbutton(days_frame, text=day_label, variable=var, width=3)
+            # Aggiungi il comando check_max_days per controllare quando si seleziona un checkbox
+            cb = ttk.Checkbutton(days_frame, text=day_label, variable=var, width=3, command=self.check_max_days)
             cb.pack(side=tk.LEFT, padx=2)
         
-        # Imposta valori di default comuni (mar, gio, dom)
-        self.preferred_days_vars[1].set(True)  # Martedì
-        self.preferred_days_vars[3].set(True)  # Giovedì
-        self.preferred_days_vars[6].set(True)  # Domenica
+        # Imposta valori di default: seleziona esattamente max_sessions giorni
+        # Preferisci questi giorni nell'ordine: martedì, giovedì, domenica, lunedì, venerdì, ecc.
+        default_days = [1, 3, 6, 0, 4, 2, 5]  # Ordine di preferenza
+        for day in default_days[:max_sessions]:
+            self.preferred_days_vars[day].set(True)
+        
         
         # Pulsante pianifica
-        self.plan_button = ttk.Button(planning_grid, text="Pianifica", 
+        self.plan_button = ttk.Button(planning_grid, text=f"Pianifica ({max_sessions}/{max_sessions} giorni)", 
                                     command=self.schedule_workouts_direct)
         self.plan_button.grid(row=0, column=8, padx=(10, 0), pady=5)
         
-        # Canvas per visualizzare graficamente i passi (esistente)
+        # Inizializza lo stato del pulsante
+        self.update_plan_button_state()
+        
+        # Canvas per visualizzare graficamente i passi
         canvas_frame = ttk.LabelFrame(parent, text="Anteprima allenamento")
         canvas_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
         
@@ -2796,10 +2948,24 @@ class WorkoutEditorFrame(ttk.Frame):
             messagebox.showerror("Errore", "La data della gara non è valida. Usa il formato YYYY-MM-DD.", parent=self)
             return
         
+        # Determina il numero massimo di sessioni per settimana
+        max_sessions = self.determine_max_sessions_per_week()
+        
         # Ottieni i giorni preferiti
         preferred_days = [day for day, var in self.preferred_days_vars.items() if var.get()]
-        if not preferred_days:
-            messagebox.showerror("Errore", "Seleziona almeno un giorno preferito per l'allenamento.", parent=self)
+        
+        # MODIFICA: Verifica che il numero di giorni selezionati sia ESATTAMENTE uguale al massimo
+        if len(preferred_days) != max_sessions:
+            if len(preferred_days) < max_sessions:
+                messagebox.showerror("Giorni insufficienti", 
+                                  f"Hai selezionato solo {len(preferred_days)} giorni, ma il piano contiene {max_sessions} sessioni per settimana.\n\n"
+                                  f"Devi selezionare esattamente {max_sessions} giorni preferiti.", 
+                                  parent=self)
+            else:  # len(preferred_days) > max_sessions
+                messagebox.showerror("Troppi giorni selezionati", 
+                                  f"Hai selezionato {len(preferred_days)} giorni, ma il piano contiene {max_sessions} sessioni per settimana.\n\n"
+                                  f"Devi selezionare esattamente {max_sessions} giorni preferiti.", 
+                                  parent=self)
             return
         
         # Pianifica gli allenamenti
@@ -2844,6 +3010,91 @@ class WorkoutEditorFrame(ttk.Frame):
             messagebox.showerror("Errore", 
                               f"Si è verificato un errore durante la pianificazione:\n{str(e)}", 
                               parent=self)
+
+
+    def determine_max_sessions_per_week(self):
+        """
+        Determina il numero massimo di sessioni per settimana analizzando gli allenamenti.
+        Cerca il numero di sessione più alto per ogni settimana (es. W01S05 indica 5 sessioni per la settimana 1).
+        
+        Returns:
+            int: Il numero massimo di sessioni per settimana (default 3 se non trovato)
+        """
+        max_sessions = 0
+        pattern = re.compile(r'W(\d{2})S(\d{2})\s')
+        
+        for name, _ in self.workouts:
+            match = pattern.match(name)
+            if match:
+                session = int(match.group(2))
+                max_sessions = max(max_sessions, session)
+        
+        # Se non troviamo sessioni con il pattern corretto, usiamo un valore predefinito
+        if max_sessions == 0:
+            max_sessions = 3
+        
+        logging.info(f"Numero massimo di sessioni per settimana: {max_sessions}")
+        return max_sessions
+
+
+    def check_max_days(self):
+        """
+        Controlla che il numero di giorni selezionati non superi il massimo consentito
+        in base al numero massimo di sessioni per settimana.
+        
+        NOTA: Non impostiamo un minimo qui perché l'utente potrebbe voler 
+        selezionare i giorni uno alla volta. La verifica del numero esatto
+        avverrà solo al momento di avviare la pianificazione.
+        """
+        # Determina il numero massimo di sessioni per settimana
+        max_sessions = self.determine_max_sessions_per_week()
+        
+        # Ottieni i giorni selezionati
+        selected_days = [day for day, var in self.preferred_days_vars.items() if var.get()]
+        
+        # Se sono selezionati troppi giorni
+        if len(selected_days) > max_sessions:
+            # Trova gli ultimi giorni selezionati in ordine inverso e deselezionali
+            days_to_deselect = len(selected_days) - max_sessions
+            
+            # Ordina i giorni selezionati in ordine inverso
+            selected_days_sorted = sorted(selected_days, reverse=True)
+            
+            # Deseleziona i primi 'days_to_deselect' giorni
+            for i in range(days_to_deselect):
+                if i < len(selected_days_sorted):
+                    day = selected_days_sorted[i]
+                    self.preferred_days_vars[day].set(False)
+            
+            # Aggiorna lo stato del pulsante pianifica in base ai giorni selezionati
+            self.update_plan_button_state()
+            
+            # Avvisa l'utente
+            messagebox.showwarning("Troppi giorni selezionati", 
+                                 f"Puoi selezionare al massimo {max_sessions} giorni di allenamento "
+                                 f"perché il piano contiene {max_sessions} sessioni per settimana.", 
+                                 parent=self)
+        else:
+            # Aggiorna comunque lo stato del pulsante
+            self.update_plan_button_state()
+
+
+    def update_plan_button_state(self):
+        """
+        Aggiorna lo stato del pulsante 'Pianifica' in base al numero di giorni selezionati.
+        Il pulsante sarà abilitato solo se il numero di giorni è esattamente uguale al massimo.
+        """
+        if hasattr(self, 'plan_button'):
+            max_sessions = self.determine_max_sessions_per_week()
+            selected_days = [day for day, var in self.preferred_days_vars.items() if var.get()]
+            
+            if len(selected_days) == max_sessions:
+                self.plan_button['state'] = 'normal'
+                self.plan_button['text'] = f"Pianifica ({len(selected_days)}/{max_sessions} giorni)"
+            else:
+                # Pulsante disabilitato ma informativo
+                self.plan_button['state'] = 'disabled'
+                self.plan_button['text'] = f"Pianifica ({len(selected_days)}/{max_sessions} giorni)"
 
     def save_planning_config(self, race_date, preferred_days):
         """Salva la configurazione di pianificazione nella configurazione globale"""
