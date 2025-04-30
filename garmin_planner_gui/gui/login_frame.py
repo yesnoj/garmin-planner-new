@@ -20,7 +20,7 @@ class LoginFrame(ttk.Frame):
         super().__init__(parent)
         self.controller = controller
         self.init_ui()
-    
+        
     def init_ui(self):
         """Inizializza l'interfaccia utente"""
         # Frame principale con un po' di padding
@@ -57,25 +57,15 @@ class LoginFrame(ttk.Frame):
         self.password_entry = ttk.Entry(form_frame, textvariable=self.password_var, show="*", width=40)
         self.password_entry.grid(row=1, column=1, sticky=tk.W+tk.E, pady=5)
         
-        # Cartella OAuth
-        ttk.Label(form_frame, text="Cartella OAuth:").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.oauth_folder_var = tk.StringVar(value=self.controller.config.get('oauth_folder', '~/.garth'))
-        self.oauth_folder_entry = ttk.Entry(form_frame, textvariable=self.oauth_folder_var, width=40)
-        self.oauth_folder_entry.grid(row=2, column=1, sticky=tk.W+tk.E, pady=5)
-        
-        # Pulsante sfoglia per la cartella OAuth
-        self.browse_button = ttk.Button(form_frame, text="Sfoglia...", command=self.browse_oauth_folder)
-        self.browse_button.grid(row=2, column=2, sticky=tk.W, padx=5, pady=5)
-        
         # Salva credenziali
         self.save_creds_var = tk.BooleanVar(value=True)
         self.save_creds_check = ttk.Checkbutton(form_frame, text="Salva token per accessi futuri", 
                                               variable=self.save_creds_var)
-        self.save_creds_check.grid(row=3, column=1, sticky=tk.W, pady=5)
+        self.save_creds_check.grid(row=2, column=1, sticky=tk.W, pady=5)
         
         # Frame per i pulsanti
         button_frame = ttk.Frame(form_frame)
-        button_frame.grid(row=4, column=0, columnspan=3, pady=20)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=20)
         
         # Pulsante login
         self.login_button = ttk.Button(button_frame, text="Accedi", 
@@ -91,7 +81,7 @@ class LoginFrame(ttk.Frame):
         
         # Frame per lo stato del login
         status_frame = ttk.Frame(form_frame)
-        status_frame.grid(row=5, column=0, columnspan=3, sticky=tk.W+tk.E)
+        status_frame.grid(row=4, column=0, columnspan=2, sticky=tk.W+tk.E)
         
         # Indicatore di stato
         self.status_var = tk.StringVar(value="In attesa di login")
@@ -111,7 +101,7 @@ class LoginFrame(ttk.Frame):
             "La connessione a Garmin Connect è necessaria per sincronizzare "
             "gli allenamenti con il tuo account Garmin.\n\n"
             "Le credenziali vengono utilizzate solo per autenticarsi con i server Garmin. "
-            "Il token di accesso viene salvato in modo sicuro nella cartella OAuth specificata."
+            "Il token di accesso viene salvato in modo sicuro nella cartella OAuth configurata nelle impostazioni."
         )
         
         ttk.Label(info_frame, text=info_text, wraplength=500, 
@@ -135,7 +125,7 @@ class LoginFrame(ttk.Frame):
         # Ottieni i valori
         email = self.email_var.get().strip()
         password = self.password_var.get()
-        oauth_folder = os.path.expanduser(self.oauth_folder_var.get())
+        oauth_folder = os.path.expanduser(self.controller.config.get('oauth_folder', '~/.garth'))
         
         # Validazione
         if not email:
@@ -160,8 +150,6 @@ class LoginFrame(ttk.Frame):
         self.login_button['state'] = 'disabled'
         self.email_entry['state'] = 'disabled'
         self.password_entry['state'] = 'disabled'
-        self.oauth_folder_entry['state'] = 'disabled'
-        self.browse_button['state'] = 'disabled'
         self.save_creds_check['state'] = 'disabled'
         
         # Aggiorna lo stato
@@ -242,8 +230,6 @@ class LoginFrame(ttk.Frame):
         # Disabilita i campi per mostrare email e password come "grigetti" di sola lettura
         self.email_entry['state'] = 'disabled'
         self.password_entry['state'] = 'disabled'
-        self.oauth_folder_entry['state'] = 'disabled'
-        self.browse_button['state'] = 'disabled'
         self.save_creds_check['state'] = 'disabled'
         
         # Informa il controller
@@ -261,8 +247,6 @@ class LoginFrame(ttk.Frame):
         self.login_button['state'] = 'normal'
         self.email_entry['state'] = 'normal'
         self.password_entry['state'] = 'normal'
-        self.oauth_folder_entry['state'] = 'normal'
-        self.browse_button['state'] = 'normal'
         self.save_creds_check['state'] = 'normal'
         
         # Mostra l'errore
@@ -273,14 +257,13 @@ class LoginFrame(ttk.Frame):
         messagebox.showerror("Errore di login", 
                             f"Impossibile accedere a Garmin Connect: {error_message}", 
                             parent=self)
-    
     def logout(self):
         """Effettua il logout da Garmin Connect"""
         if messagebox.askyesno("Conferma logout", 
                              "Sei sicuro di voler effettuare il logout da Garmin Connect?", 
                              parent=self):
-            # Cancella il token OAuth
-            oauth_folder = os.path.expanduser(self.oauth_folder_var.get())
+            # Cancella il token OAuth, usando la cartella dalle impostazioni
+            oauth_folder = os.path.expanduser(self.controller.config.get('oauth_folder', '~/.garth'))
             try:
                 # Cancella solo il file di sessione, non l'intera cartella
                 session_file = os.path.join(oauth_folder, 'session.json')
@@ -297,8 +280,6 @@ class LoginFrame(ttk.Frame):
             self.logout_button['state'] = 'disabled'
             self.email_entry['state'] = 'normal'
             self.password_entry['state'] = 'normal'
-            self.oauth_folder_entry['state'] = 'normal'
-            self.browse_button['state'] = 'normal'
             self.save_creds_check['state'] = 'normal'
             
             # Cancella la password (ma non l'email)
@@ -306,7 +287,7 @@ class LoginFrame(ttk.Frame):
             
             # Informa il controller
             self.controller.on_logout()
-    
+        
 
     def update_ui_after_login(self):
         """Aggiorna l'interfaccia dopo un login automatico"""
@@ -320,6 +301,4 @@ class LoginFrame(ttk.Frame):
         # Disabilita i campi ma mantieni visibili i valori
         self.email_entry['state'] = 'disabled'
         self.password_entry['state'] = 'disabled'
-        self.oauth_folder_entry['state'] = 'disabled'
-        self.browse_button['state'] = 'disabled'
         self.save_creds_check['state'] = 'disabled'

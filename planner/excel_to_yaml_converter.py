@@ -50,6 +50,7 @@ def extract_paces_and_speeds_from_excel(excel_file):
     """
     try:
         import openpyxl
+        import re
         
         # Carica il workbook
         wb = openpyxl.load_workbook(excel_file, data_only=True)
@@ -110,6 +111,10 @@ def extract_paces_and_speeds_from_excel(excel_file):
                 else:
                     value = str(col1).strip()
                 
+                # CORREZIONE: Normalizza il formato dei ritmi
+                if current_section == 'running' or current_section == 'swimming':
+                    value = normalize_pace_format(value)
+                
                 # Aggiunta importante di debug
                 print(f"Aggiungendo {name}: {value} a {current_section}")
                 
@@ -134,6 +139,55 @@ def extract_paces_and_speeds_from_excel(excel_file):
         traceback.print_exc()
         return {}, {}, {}
 
+def normalize_pace_format(value):
+    """
+    Normalizza il formato dei ritmi, convertendo vari formati in mm:ss.
+    
+    Args:
+        value: Il valore del ritmo da normalizzare
+        
+    Returns:
+        Il ritmo normalizzato nel formato mm:ss
+    """
+    import re
+    
+    # Se è già in formato standard mm:ss (es. '4:30')
+    if isinstance(value, str) and re.match(r'^\d{1,2}:\d{2}$', value):
+        return value
+    
+    # Se è in formato hh:mm:ss (es. '00:04:30')
+    if isinstance(value, str) and re.match(r'^\d{1,2}:\d{2}:\d{2}$', value):
+        h, m, s = map(int, value.split(':'))
+        total_minutes = h * 60 + m
+        return f"{total_minutes}:{s:02d}"
+    
+    # Se è in formato ssss:00 (es. '380:00') - questo è il caso problematico
+    if isinstance(value, str) and re.match(r'^\d+:\d{2}$', value):
+        parts = value.split(':')
+        if len(parts) == 2:
+            try:
+                total_seconds = int(parts[0])
+                # Converti i secondi totali in formato mm:ss
+                minutes = total_seconds // 60
+                seconds = total_seconds % 60
+                return f"{minutes}:{seconds:02d}"
+            except ValueError:
+                # Se non è un numero valido, ritorna il valore originale
+                pass
+    
+    # Se è un numero intero di secondi
+    if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
+        try:
+            total_seconds = int(float(value))
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            return f"{minutes}:{seconds:02d}"
+        except (ValueError, TypeError):
+            pass
+    
+    # Se non è riconosciuto, ritorna il valore originale
+    return value
+
 
 def yaml_to_excel(yaml_data, excel_file, create_new=False):
     """
@@ -152,6 +206,7 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
         import openpyxl
         from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
         import os
+        import re
         
         # Estrai la configurazione
         config = yaml_data.get('config', {})
@@ -201,6 +256,34 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
         swim_paces = yaml_data.get('swim_paces', {})
         if not swim_paces and 'swim_paces' in config:
             swim_paces = config.get('swim_paces', {})
+        
+        # CORREZIONE: Normalizza il formato dei ritmi prima di inserirli nell'Excel
+        # Funzione per normalizzare il formato dei ritmi
+        def normalize_pace_format(value):
+            # Se è una stringa in formato "NNN:00" (secondi totali)
+            if isinstance(value, str) and re.match(r'^\d+:\d{2}$', value):
+                parts = value.split(':')
+                if len(parts) == 2 and parts[1] == '00':
+                    try:
+                        total_seconds = int(parts[0])
+                        minutes = total_seconds // 60
+                        seconds = total_seconds % 60
+                        return f"{minutes}:{seconds:02d}"
+                    except ValueError:
+                        pass
+            return value
+        
+        # Normalizza i valori dei ritmi
+        normalized_paces = {}
+        for name, value in paces.items():
+            normalized_paces[name] = normalize_pace_format(value)
+        paces = normalized_paces
+        
+        # Normalizza i valori dei passi vasca
+        normalized_swim_paces = {}
+        for name, value in swim_paces.items():
+            normalized_swim_paces[name] = normalize_pace_format(value)
+        swim_paces = normalized_swim_paces
         
         # Aggiorna i ritmi in base al tipo di sport - ora entrambi nel foglio Paces
         if 'Paces' in wb.sheetnames:
@@ -409,7 +492,7 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
         # Crea un foglio Examples unificato con esempi per entrambi i tipi di sport
         create_unified_examples_sheet(wb)
         
-        # Assicurati che i fogli siano nell'ordine corretto
+        # CORREZIONE: Assicurati che i fogli siano nell'ordine corretto
         sheet_order = ['Config', 'Paces', 'HeartRates', 'Workouts', 'Examples']
         
         # Riordina i fogli solo se necessario e solo quelli che esistono
@@ -425,7 +508,19 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
         
         # Riordina i fogli
         try:
-            wb._sheets = [wb[sheet_name] for sheet_name in existing_sheets]
+            # Crea una nuova lista di fogli nell'ordine corretto
+            new_sheets = []
+            for sheet_name in existing_sheets:
+                new_sheets.append(wb[sheet_name])
+            
+            # Assegna la nuova lista di fogli al workbook
+            wb._sheets = new_sheets
+            
+            # Assicurati che l'attributo _active_sheet_index sia valido
+            if hasattr(wb, '_active_sheet_index') and wb._active_sheet_index >= len(wb._sheets):
+                wb._active_sheet_index = 0
+                
+            logging.info("Ordine dei fogli aggiornato con successo")
         except Exception as e:
             logging.warning(f"Impossibile riordinare i fogli: {str(e)}")
         
@@ -700,10 +795,56 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     if 'Paces' in xls.sheet_names:
         paces, swim_paces, power_values = extract_paces_and_speeds_from_excel(excel_file)
         
-        # Aggiungi direttamente al piano (non dentro config)
-        plan['paces'] = paces
-        plan['swim_paces'] = swim_paces
+        # CORREZIONE: Normalizza il formato dei ritmi prima di salvarli nel YAML
+        # Funzione di helper per normalizzare il formato dei ritmi
+        def normalize_pace_format(value):
+            import re
+            # Se il formato è "NNN:00" (secondi totali)
+            if isinstance(value, str) and re.match(r'^\d+:\d{2}$', value):
+                parts = value.split(':')
+                if len(parts) == 2 and parts[1] == '00':
+                    try:
+                        total_seconds = int(parts[0])
+                        # Converti in formato mm:ss
+                        minutes = total_seconds // 60
+                        seconds = total_seconds % 60
+                        return f"{minutes}:{seconds:02d}"
+                    except ValueError:
+                        pass
+            
+            # Se il formato è "0:MM" (dove MM sono i minuti)
+            if isinstance(value, str) and re.match(r'^0:\d{2}$', value):
+                try:
+                    minutes = int(value.split(':')[1])
+                    return f"{minutes}:00"
+                except (ValueError, IndexError):
+                    pass
+                    
+            # Se il formato è già corretto o non riconosciuto, restituisci il valore originale
+            return value
+        
+        # Normalizza i valori dei ritmi
+        normalized_paces = {}
+        for name, value in paces.items():
+            normalized_paces[name] = normalize_pace_format(value)
+        
+        # Normalizza i valori dei passi vasca
+        normalized_swim_paces = {}
+        for name, value in swim_paces.items():
+            normalized_swim_paces[name] = normalize_pace_format(value)
+        
+        # CORREZIONE: Aggiungi i ritmi SOLO a livello radice, NON dentro config
+        plan['paces'] = normalized_paces
+        plan['swim_paces'] = normalized_swim_paces
         plan['power_values'] = power_values
+        
+        # CORREZIONE: Rimuovi le versioni duplicate all'interno di config
+        if 'paces' in plan['config']:
+            del plan['config']['paces']
+        if 'swim_paces' in plan['config']:
+            del plan['config']['swim_paces']
+        if 'power_values' in plan['config']:
+            del plan['config']['power_values']
     
     # Estrai le frequenze cardiache
     if 'HeartRates' in xls.sheet_names:

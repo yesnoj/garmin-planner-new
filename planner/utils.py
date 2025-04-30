@@ -53,26 +53,46 @@ def hhmmss_to_seconds(s):
             raise ValueError("Invalid duration provided, must use mm:ss or hh:mm:ss format: " + s)
 
 def seconds_to_mmss(seconds):
-    """Converts a time in seconds to a string in mm:ss format.
+    """Converte un tempo in secondi in una stringa nel formato mm:ss.
+    Gestisce anche il formato "NNN:00" convertendolo in mm:ss.
 
     Args:
-        seconds: The time in seconds (int or float).
+        seconds: Il tempo in secondi (int o float) o una stringa nel formato "NNN:00"
 
     Returns:
-        A string representing the time in mm:ss format (e.g., "10:00", "01:30").
+        Una stringa rappresentante il tempo in mm:ss format (es. "10:00", "01:30").
 
     Raises:
-        TypeError: If the input is not a number (int or float).
-        ValueError: If the input is negative.
+        TypeError: Se l'input non è un numero (int o float) o una stringa valida.
+        ValueError: Se l'input è negativo.
     """
+    # Se è una stringa nel formato "NNN:00"
+    if isinstance(seconds, str) and ':00' in seconds:
+        try:
+            seconds = int(seconds.split(':')[0])
+        except (ValueError, IndexError):
+            raise ValueError(f"Formato non valido: {seconds}")
+    
+    # Se è una stringa che può essere convertita in numero
+    elif isinstance(seconds, str):
+        try:
+            seconds = int(float(seconds))
+        except ValueError:
+            raise ValueError(f"Impossibile convertire in numero: {seconds}")
+    
+    # Verifica che sia un numero
     if not isinstance(seconds, (int, float)):
-        raise TypeError("Input must be a number.")
+        raise TypeError("Input deve essere un numero o una stringa valida.")
+    
+    # Verifica che non sia negativo
     if seconds < 0:
-        raise ValueError("Input must be non-negative.")
+        raise ValueError("Input deve essere non-negativo.")
 
+    # Calcola minuti e secondi
     mins = int(seconds / 60)
-    seconds = int(seconds - mins * 60)
-    return f"{mins:02}:{seconds:02}"
+    secs = int(seconds % 60)
+    return f"{mins:02d}:{secs:02d}"
+
 
 def pace_to_kmph(pace):
     """Converts a pace string in mm:ss format to kilometers per hour (km/h).
@@ -187,29 +207,48 @@ def dist_time_to_ms(dist_time):
 
 def normalize_pace(orig_pace):
     '''
-    Normalizes a pace string to the format mm:ss or hh:mm:ss with zero-padding.
+    Normalizza una stringa di ritmo nel formato mm:ss o hh:mm:ss con zero-padding.
 
-    This function takes a pace string and ensures it is in a consistent format
-    of mm:ss or hh:mm:ss, adding leading zeros where necessary. It also validates
-    that the minutes and seconds components are below 60.
+    Questa funzione prende una stringa di ritmo e garantisce che sia in un formato consistente
+    mm:ss o hh:mm:ss, aggiungendo zeri iniziali dove necessario. Verifica anche che
+    i componenti minuti e secondi siano inferiori a 60.
 
     Args:
-        orig_pace: The pace string to normalize (e.g., "4:40", "04:4", "12:4:4").
+        orig_pace: La stringa di ritmo da normalizzare (es. "4:40", "04:4", "12:4:4", "380:00").
 
     Returns:
-        The normalized pace string in mm:ss or hh:mm:ss format (e.g., "04:40", "04:04", "12:04:04").
+        La stringa di ritmo normalizzata nel formato mm:ss o hh:mm:ss (es. "04:40", "04:04", "12:04:04").
 
     Raises:
-        ValueError: If the input string is not in a valid pace format or if minutes/seconds are >= 60.
+        ValueError: Se la stringa di input non è in un formato di ritmo valido o se minuti/secondi sono >= 60.
     '''
-    m = re.compile(r'^\d{1,2}:\d{1,2}:?\d{0,2}$')
+    # Verifica se è un formato "NNN:00" (secondi totali) e converti in mm:ss
+    if re.match(r'^\d+:00$', orig_pace):
+        try:
+            seconds = int(orig_pace.split(':')[0])
+            minutes = seconds // 60
+            remainder = seconds % 60
+            return f"{minutes}:{remainder:02d}"
+        except (ValueError, IndexError):
+            pass
+    
+    # Gestione normale per formati mm:ss e hh:mm:ss
+    m = re.compile(r'^\d{1,2}:\d{1,2}(:?\d{0,2})?$')
     if m.match(orig_pace):
         parts = [int(part) for part in orig_pace.split(":")]
-        # minutes and seconds must be belows 60
-        if parts[len(parts)-1] >= 60 or parts[len(parts)-2] >= 60:
+        
+        # Verifica che minuti e secondi siano inferiori a 60
+        if parts[-1] >= 60 or parts[-2] >= 60:
             raise ValueError('Invalid pace format: ' + orig_pace)
-
-        # Add zero padding
+        
+        # Se abbiamo solo due parti (mm:ss), formatta come mm:ss
+        if len(parts) == 2:
+            return f"{parts[0]:02d}:{parts[1]:02d}"
+        # Se abbiamo tre parti (hh:mm:ss), formatta come hh:mm:ss
+        elif len(parts) == 3:
+            return f"{parts[0]:02d}:{parts[1]:02d}:{parts[2]:02d}"
+        
+        # Aggiungi zero padding
         padded = [str(part).zfill(2) for part in parts]
         return ":".join(padded)
     else:

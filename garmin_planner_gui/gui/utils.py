@@ -229,6 +229,7 @@ def hhmmss_to_seconds(s):
     else:
         raise ValueError(f"Formato tempo non valido: {s}")
 
+
 def seconds_to_mmss(seconds):
     """Converte un numero di secondi in una stringa nel formato mm:ss"""
     if not seconds:
@@ -238,15 +239,125 @@ def seconds_to_mmss(seconds):
     secs = int(seconds % 60)
     return f"{minutes:02d}:{secs:02d}"
 
-def seconds_to_hhmmss(seconds):
-    """Converte un numero di secondi in una stringa nel formato hh:mm:ss"""
-    if not seconds:
-        return "00:00:00"
+def seconds_to_mmss(seconds):
+    """Converte un numero di secondi in una stringa nel formato mm:ss.
+    Gestisce anche il formato "NNN:00" convertendolo in mm:ss.
+
+    Args:
+        seconds: Il tempo in secondi (int o float) o una stringa nel formato "NNN:00"
+
+    Returns:
+        Una stringa rappresentante il tempo in mm:ss format (es. "10:00", "01:30").
+    """
+    # Se è una stringa nel formato "NNN:00"
+    if isinstance(seconds, str) and ':00' in seconds:
+        try:
+            seconds = int(seconds.split(':')[0])
+        except (ValueError, IndexError):
+            pass
     
+    # Se è una stringa che può essere convertita in numero
+    elif isinstance(seconds, str):
+        try:
+            seconds = int(float(seconds))
+        except ValueError:
+            return seconds  # Restituisci il valore originale in caso di errore
+    
+    # Se non è un numero, restituisci il valore originale
+    if not isinstance(seconds, (int, float)):
+        return seconds
+
+    # Se è negativo, restituisci "00:00"
+    if seconds < 0:
+        return "00:00"
+
+    # Calcola minuti e secondi
+    minutes = int(seconds / 60)
+    secs = int(seconds % 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+def normalize_pace(pace):
+    """Normalizza il formato del ritmo (mm:ss o hh:mm:ss).
+    Converte anche formati come "380:00" in "6:20".
+
+    Args:
+        pace: Il ritmo da normalizzare
+        
+    Returns:
+        Il ritmo normalizzato
+    """
+    import re
+
+    # Verifica se è un formato "NNN:00" (secondi totali) e converti in mm:ss
+    if isinstance(pace, str) and re.match(r'^\d+:00$', pace):
+        try:
+            seconds = int(pace.split(':')[0])
+            minutes = seconds // 60
+            remainder = seconds % 60
+            return f"{minutes}:{remainder:02d}"
+        except (ValueError, IndexError):
+            pass
+    
+    # Gestione normale per formati mm:ss e hh:mm:ss
+    if isinstance(pace, str) and re.match(r'^\d{1,2}:\d{1,2}(:?\d{0,2})?$', pace):
+        parts = [int(part) for part in pace.split(":")]
+        
+        # Verifica che minuti e secondi siano inferiori a 60
+        if parts[-1] >= 60 or parts[-2] >= 60:
+            return pace  # Torna il valore originale se non valido
+        
+        # Se abbiamo solo due parti (mm:ss), formatta come mm:ss
+        if len(parts) == 2:
+            return f"{parts[0]:02d}:{parts[1]:02d}"
+        # Se abbiamo tre parti (hh:mm:ss), formatta come hh:mm:ss
+        elif len(parts) == 3:
+            return f"{parts[0]:02d}:{parts[1]:02d}:{parts[2]:02d}"
+        
+        # Aggiungi zero padding
+        padded = [str(part).zfill(2) for part in parts]
+        return ":".join(padded)
+    
+    # Se non è un formato riconosciuto, torna il valore originale
+    return pace
+
+def seconds_to_hhmmss(seconds):
+    """Converte un numero di secondi in una stringa nel formato hh:mm:ss.
+    Gestisce anche il formato "NNN:00" convertendolo in hh:mm:ss.
+
+    Args:
+        seconds: Il tempo in secondi (int o float) o una stringa come "NNN:00"
+
+    Returns:
+        Una stringa rappresentante il tempo in hh:mm:ss format.
+    """
+    # Se è una stringa nel formato "NNN:00"
+    if isinstance(seconds, str) and ':00' in seconds:
+        try:
+            seconds = int(seconds.split(':')[0])
+        except (ValueError, IndexError):
+            return seconds  # Restituisci il valore originale in caso di errore
+    
+    # Se è una stringa che può essere convertita in numero
+    elif isinstance(seconds, str):
+        try:
+            seconds = int(float(seconds))
+        except ValueError:
+            return seconds  # Restituisci il valore originale in caso di errore
+    
+    # Se non è un numero, restituisci il valore originale
+    if not isinstance(seconds, (int, float)):
+        return seconds
+
+    # Se è negativo, restituisci "00:00:00"
+    if seconds < 0:
+        return "00:00:00"
+
+    # Calcola ore, minuti e secondi
     hours = int(seconds / 3600)
     minutes = int((seconds % 3600) / 60)
     secs = int(seconds % 60)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
 
 def get_today_date_str():
     """Restituisce la data odierna nel formato YYYY-MM-DD"""
