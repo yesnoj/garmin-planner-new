@@ -30,9 +30,16 @@ logging.basicConfig(
 
 # Customize YAML dumper to avoid references/aliases
 class NoAliasDumper(yaml.SafeDumper):
-    """Custom YAML dumper that ignores aliases"""
+    """Custom YAML dumper that ignores aliases and supports OrderedDict"""
     def ignore_aliases(self, data):
         return True
+    
+    def represent_mapping(self, tag, mapping, flow_style=None):
+        """Override to handle OrderedDict"""
+        # Convert OrderedDict to regular dict for serialization
+        if hasattr(mapping, 'items'):
+            mapping = dict(mapping.items())
+        return super().represent_mapping(tag, mapping, flow_style)
 
 # Valid step types supported by garmin-planner
 VALID_STEP_TYPES = {"warmup", "cooldown", "interval", "recovery", "rest", "repeat", "other"}
@@ -333,6 +340,7 @@ def extract_paces_and_speeds_from_excel(excel_file):
         traceback.print_exc()
         return {}, {}, {}, {}
 
+
 def format_pace_for_excel(pace_value):
     """
     Formatta un valore di passo per la visualizzazione nel foglio Excel.
@@ -369,6 +377,12 @@ def format_pace_for_excel(pace_value):
     if isinstance(pace_value, str) and re.match(r'^\d{1,2}:\d{2}$', pace_value):
         return pace_value
     
+    # Se è in formato hh:mm:ss (es. '00:04:30')
+    if isinstance(pace_value, str) and re.match(r'^\d{1,2}:\d{2}:\d{2}$', pace_value):
+        h, m, s = map(int, pace_value.split(':'))
+        total_minutes = h * 60 + m
+        return f"{total_minutes}:{s:02d}"
+    
     # Se è un intero o float (secondi)
     if isinstance(pace_value, (int, float)):
         minutes = int(pace_value) // 60
@@ -385,7 +399,6 @@ def format_pace_for_excel(pace_value):
     # Altre conversioni possono essere aggiunte qui se necessario
     
     return str(pace_value)
-
 
 def normalize_pace_format(value):
     """
@@ -523,241 +536,15 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
         if not swim_paces and 'swim_paces' in config:
             swim_paces = config.get('swim_paces', {})
         
-        # Aggiorna i ritmi in base al tipo di sport - ora entrambi nel foglio Paces
+        # Aggiorna i ritmi in base al tipo di sport - usando la funzione update_unified_paces_sheet
         if 'Paces' in wb.sheetnames:
-            # IMPORTANTE: Ricreiamo il foglio Paces completamente vuoto
-            # invece di usare template così includeremo solo i ritmi presenti nel file YAML
-            if 'Paces' in wb.sheetnames:
-                wb.remove(wb['Paces'])
-            
-            # Crea un nuovo foglio Paces vuoto
+            # Rimuovi il foglio Paces esistente e creane uno nuovo
+            wb.remove(wb['Paces'])
             paces_sheet = wb.create_sheet('Paces')
             
-            # Definisci stili
-            header_font = Font(bold=True)
-            subheader_font = Font(bold=True, size=12)
-            wrapped_alignment = Alignment(wrap_text=True, vertical='top')
-            thin_border = Border(
-                left=Side(style='thin'),
-                right=Side(style='thin'),
-                top=Side(style='thin'),
-                bottom=Side(style='thin')
-            )
-            header_fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
-            running_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-            cycling_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")
-            swimming_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
-            
-            # Imposta le intestazioni di colonna
-            paces_sheet['A1'] = 'Name'
-            paces_sheet['B1'] = 'Value'
-            paces_sheet['C1'] = 'Note'
-            
-            # Formatta le intestazioni
-            for col in ['A', 'B', 'C']:
-                cell = paces_sheet[f'{col}1']
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.border = thin_border
-                cell.alignment = Alignment(horizontal='center', vertical='center')
-            
-            # Imposta larghezze colonne
-            paces_sheet.column_dimensions['A'].width = 15
-            paces_sheet.column_dimensions['B'].width = 15
-            paces_sheet.column_dimensions['C'].width = 30
-            
-            # Contatori per le righe
-            row = 2
-            
-            # Aggiungi sezioni SOLO se ci sono valori per esse
-            
-            # 1. Ritmi per la corsa
-            if paces:
-                # Aggiungi intestazione sezione Running
-                paces_sheet.merge_cells(f'A{row}:C{row}')
-                paces_sheet[f'A{row}'] = 'RITMI PER LA CORSA (min/km)'
-                paces_sheet[f'A{row}'].font = subheader_font
-                paces_sheet[f'A{row}'].fill = running_fill
-                paces_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-                row += 1
-                
-                # Aggiungi i ritmi dalla configurazione
-                for name, value in paces.items():
-                    paces_sheet[f'A{row}'] = name
-                    
-                    # Imposta il valore e applica il formato corretto
-                    cell = paces_sheet[f'B{row}']
-                    cell.value = format_pace_for_excel(value)
-                    cell.number_format = 'General'  # Formato generale
-                    
-                    # Descrizione di default in base al nome
-                    description = ""
-                    if name.startswith('Z'):
-                        zone_match = re.match(r'Z(\d)', name)
-                        if zone_match:
-                            zone_num = int(zone_match.group(1))
-                            if zone_num == 1:
-                                description = "Ritmo molto facile (zona 1)"
-                            elif zone_num == 2:
-                                description = "Ritmo facile (zona 2)"
-                            elif zone_num == 3:
-                                description = "Ritmo moderato (zona 3)"
-                            elif zone_num == 4:
-                                description = "Ritmo duro (zona 4)"
-                            elif zone_num == 5:
-                                description = "Ritmo molto duro (zona 5)"
-                    elif name == 'recovery':
-                        description = "Ritmo di recupero"
-                    elif name == 'threshold':
-                        description = "Ritmo soglia"
-                    elif name == 'marathon':
-                        description = "Ritmo maratona"
-                    elif name == 'race_pace':
-                        description = "Ritmo gara"
-                    
-                    paces_sheet[f'C{row}'] = description
-                    
-                    # Applica bordi e formattazione a tutte le celle della riga
-                    for col in ['A', 'B', 'C']:
-                        cell = paces_sheet[f'{col}{row}']
-                        cell.border = thin_border
-                        cell.alignment = wrapped_alignment
-                        
-                        # Evidenzia le righe in base al tipo di sport attivo
-                        if sport_type == "running":
-                            cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
-                    
-                    row += 1
-                
-                # Aggiungi una riga vuota dopo la sezione
-                row += 1
-            
-            # 2. Potenza per il ciclismo
-            if power_values:
-                # Aggiungi intestazione sezione Power
-                paces_sheet.merge_cells(f'A{row}:C{row}')
-                paces_sheet[f'A{row}'] = 'POTENZA PER IL CICLISMO (Watt)'
-                paces_sheet[f'A{row}'].font = subheader_font
-                paces_sheet[f'A{row}'].fill = cycling_fill
-                paces_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-                row += 1
-                
-                # Aggiungi i valori di potenza dalla configurazione
-                for name, value in power_values.items():
-                    paces_sheet[f'A{row}'] = name
-                    paces_sheet[f'B{row}'] = value
-                    
-                    # Descrizione di default in base al nome
-                    description = ""
-                    if name == 'ftp':
-                        description = "Functional Threshold Power (W)"
-                    elif name.startswith('Z'):
-                        zone_match = re.match(r'Z(\d)', name)
-                        if zone_match:
-                            zone_num = int(zone_match.group(1))
-                            if zone_num == 1:
-                                description = "Recupero attivo (55-70% FTP)"
-                            elif zone_num == 2:
-                                description = "Endurance (70-86% FTP)"
-                            elif zone_num == 3:
-                                description = "Tempo/Soglia (86-100% FTP)"
-                            elif zone_num == 4:
-                                description = "VO2max (100-120% FTP)"
-                            elif zone_num == 5:
-                                description = "Capacità anaerobica (120-150% FTP)"
-                            elif zone_num == 6:
-                                description = "Potenza neuromuscolare (>150% FTP)"
-                    elif name == 'recovery':
-                        description = "Recupero (<55% FTP)"
-                    elif name == 'threshold':
-                        description = "Soglia (94-106% FTP)"
-                    elif name == 'sweet_spot':
-                        description = "Sweet Spot (88-94% FTP)"
-                    
-                    paces_sheet[f'C{row}'] = description
-                    
-                    # Applica bordi e formattazione a tutte le celle della riga
-                    for col in ['A', 'B', 'C']:
-                        cell = paces_sheet[f'{col}{row}']
-                        cell.border = thin_border
-                        cell.alignment = wrapped_alignment
-                        
-                        # Evidenzia le righe in base al tipo di sport attivo
-                        if sport_type == "cycling":
-                            cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
-                    
-                    row += 1
-                
-                # Aggiungi una riga vuota dopo la sezione
-                row += 1
-            
-            # 3. Passi vasca per il nuoto
-            if swim_paces:
-                # Aggiungi intestazione sezione Swimming
-                paces_sheet.merge_cells(f'A{row}:C{row}')
-                paces_sheet[f'A{row}'] = 'PASSI VASCA PER IL NUOTO (min/100m)'
-                paces_sheet[f'A{row}'].font = subheader_font
-                paces_sheet[f'A{row}'].fill = swimming_fill
-                paces_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-                row += 1
-                
-                # Aggiungi i passi vasca dalla configurazione
-                for name, value in swim_paces.items():
-                    paces_sheet[f'A{row}'] = name
-                    
-                    # Imposta il valore e applica il formato corretto
-                    cell = paces_sheet[f'B{row}']
-                    cell.value = format_pace_for_excel(value)
-                    cell.number_format = 'General'  # Formato generale
-                    
-                    # Descrizione di default in base al nome
-                    description = ""
-                    if name.startswith('Z'):
-                        zone_match = re.match(r'Z(\d)', name)
-                        if zone_match:
-                            zone_num = int(zone_match.group(1))
-                            if zone_num == 1:
-                                description = "Ritmo facile (zona 1)"
-                            elif zone_num == 2:
-                                description = "Ritmo aerobico (zona 2)"
-                            elif zone_num == 3:
-                                description = "Ritmo medio (zona 3)"
-                            elif zone_num == 4:
-                                description = "Ritmo soglia (zona 4)"
-                            elif zone_num == 5:
-                                description = "Ritmo VO2max (zona 5)"
-                    elif name == 'recovery':
-                        description = "Ritmo recupero"
-                    elif name == 'threshold':
-                        description = "Ritmo soglia"
-                    elif name == 'sprint':
-                        description = "Ritmo sprint"
-                    
-                    paces_sheet[f'C{row}'] = description
-                    
-                    # Applica bordi e formattazione a tutte le celle della riga
-                    for col in ['A', 'B', 'C']:
-                        cell = paces_sheet[f'{col}{row}']
-                        cell.border = thin_border
-                        cell.alignment = wrapped_alignment
-                        
-                        # Evidenzia le righe in base al tipo di sport attivo
-                        if sport_type == "swimming":
-                            cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
-                    
-                    row += 1
-            
-            # Aggiungi una nota informativa alla fine
-            row += 1
-            paces_sheet.merge_cells(f'A{row}:C{row}')
-            if sport_type == "running":
-                paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è CORSA. Le zone Z1-Z5 si riferiscono ai ritmi in min/km.'
-            elif sport_type == "cycling":
-                paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è CICLISMO. Per la potenza, usa @pwr prima della zona (es. @pwr Z3).'
-            elif sport_type == "swimming":
-                paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è NUOTO. Le zone Z1-Z5 si riferiscono ai passi vasca in min/100m.'
-            paces_sheet[f'A{row}'].font = Font(italic=True)
-            paces_sheet[f'A{row}'].alignment = wrapped_alignment
+            # Usa la funzione update_unified_paces_sheet per aggiornare il foglio Paces
+            # Questa funzione si occuperà di tutto, compresa la formattazione e la correzione dei valori come 0:06 -> 6:00
+            update_unified_paces_sheet(paces_sheet, paces, power_values, swim_paces, sport_type)
         
         # Aggiorna le frequenze cardiache
         if 'HeartRates' in wb.sheetnames:
@@ -807,6 +594,269 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
         traceback.print_exc()
         return False
 
+def update_unified_paces_sheet(paces_sheet, paces, power_values, swim_paces, sport_type="running"):
+    """
+    Aggiorna un foglio Paces unificato con ritmi, potenza e passi vasca.
+    
+    Args:
+        paces_sheet: Foglio Excel per i Paces
+        paces: Dizionario con i ritmi per la corsa
+        power_values: Dizionario con i valori di potenza per il ciclismo
+        swim_paces: Dizionario con i passi vasca per il nuoto
+        sport_type: Tipo di sport predefinito
+    """
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.cell.cell import TYPE_STRING
+    import re
+    
+    # Pulisci il foglio esistente (rimuovi tutto tranne l'intestazione)
+    for row in range(paces_sheet.max_row, 1, -1):
+        paces_sheet.delete_rows(row)
+    
+    # Definisci stili
+    header_font = Font(bold=True)
+    subheader_font = Font(bold=True, size=12)
+    wrapped_alignment = Alignment(wrap_text=True, vertical='top')
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    header_fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
+    running_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    cycling_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")
+    swimming_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+    
+    # Imposta le intestazioni di colonna se mancano
+    if paces_sheet['A1'].value is None:
+        paces_sheet['A1'] = 'Name'
+        paces_sheet['B1'] = 'Value'
+        paces_sheet['C1'] = 'Note'
+        
+        # Formatta le intestazioni
+        for col in ['A', 'B', 'C']:
+            cell = paces_sheet[f'{col}1']
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Imposta larghezze colonne
+        paces_sheet.column_dimensions['A'].width = 15
+        paces_sheet.column_dimensions['B'].width = 15
+        paces_sheet.column_dimensions['C'].width = 30
+    
+    # Contatori per le righe
+    row = 2
+    
+    # Aggiungi sezioni solo se ci sono valori per esse
+    
+    # 1. Ritmi per la corsa
+    if paces:
+        # Aggiungi intestazione sezione Running
+        paces_sheet.merge_cells(f'A{row}:C{row}')
+        paces_sheet[f'A{row}'] = 'RITMI PER LA CORSA (min/km)'
+        paces_sheet[f'A{row}'].font = subheader_font
+        paces_sheet[f'A{row}'].fill = running_fill
+        paces_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+        row += 1
+        
+        # Aggiungi i ritmi dalla configurazione
+        for name, value in paces.items():
+            paces_sheet[f'A{row}'] = name
+            
+            # Funzione migliorata per normalizzare i valori ritmo
+            normalized_value = format_pace_for_excel(value)
+            
+            # IMPORTANTE: Speciale gestione per Z3 e altri casi problematici
+            if name == 'Z3' and normalized_value == '0:06':
+                normalized_value = '6:00'
+                print(f"Corretto il valore di Z3 da 0:06 a 6:00")
+            
+            # Assicurati che i valori che iniziano con 0: vengano convertiti in minuti:00
+            if normalized_value and isinstance(normalized_value, str) and re.match(r'^0:\d{2}$', normalized_value):
+                minutes = int(normalized_value.split(':')[1])
+                normalized_value = f"{minutes}:00"
+                print(f"Convertito {value} in {normalized_value}")
+            
+            # Imposta il valore e applica il formato corretto
+            cell = paces_sheet[f'B{row}']
+            cell.value = normalized_value
+            cell.data_type = TYPE_STRING  # Forza formato testo
+            
+            # Descrizione di default in base al nome
+            description = ""
+            if name.startswith('Z'):
+                zone_match = re.match(r'Z(\d)', name)
+                if zone_match:
+                    zone_num = int(zone_match.group(1))
+                    if zone_num == 1:
+                        description = "Ritmo molto facile (zona 1)"
+                    elif zone_num == 2:
+                        description = "Ritmo facile (zona 2)"
+                    elif zone_num == 3:
+                        description = "Ritmo moderato (zona 3)"
+                    elif zone_num == 4:
+                        description = "Ritmo duro (zona 4)"
+                    elif zone_num == 5:
+                        description = "Ritmo molto duro (zona 5)"
+            elif name == 'recovery':
+                description = "Ritmo di recupero"
+            elif name == 'threshold':
+                description = "Ritmo soglia"
+            elif name == 'marathon':
+                description = "Ritmo maratona"
+            elif name == 'race_pace':
+                description = "Ritmo gara"
+            
+            paces_sheet[f'C{row}'] = description
+            
+            # Applica bordi e formattazione a tutte le celle della riga
+            for col in ['A', 'B', 'C']:
+                cell = paces_sheet[f'{col}{row}']
+                cell.border = thin_border
+                cell.alignment = wrapped_alignment
+                
+                # Evidenzia le righe in base al tipo di sport attivo
+                if sport_type == "running":
+                    cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
+            
+            row += 1
+        
+        # Aggiungi una riga vuota dopo la sezione
+        row += 1
+    
+    # 2. Potenza per il ciclismo
+    if power_values:
+        # Aggiungi intestazione sezione Power
+        paces_sheet.merge_cells(f'A{row}:C{row}')
+        paces_sheet[f'A{row}'] = 'POTENZA PER IL CICLISMO (Watt)'
+        paces_sheet[f'A{row}'].font = subheader_font
+        paces_sheet[f'A{row}'].fill = cycling_fill
+        paces_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+        row += 1
+        
+        # Aggiungi i valori di potenza dalla configurazione
+        for name, value in power_values.items():
+            paces_sheet[f'A{row}'] = name
+            
+            # Imposta il valore come testo
+            cell = paces_sheet[f'B{row}']
+            cell.value = value
+            cell.data_type = TYPE_STRING  # Forza formato testo
+            
+            # Descrizione di default in base al nome
+            description = ""
+            if name == 'ftp':
+                description = "Functional Threshold Power (W)"
+            elif name.startswith('Z'):
+                zone_match = re.match(r'Z(\d)', name)
+                if zone_match:
+                    zone_num = int(zone_match.group(1))
+                    if zone_num == 1:
+                        description = "Recupero attivo (55-70% FTP)"
+                    elif zone_num == 2:
+                        description = "Endurance (70-86% FTP)"
+                    elif zone_num == 3:
+                        description = "Tempo/Soglia (86-100% FTP)"
+                    elif zone_num == 4:
+                        description = "VO2max (100-120% FTP)"
+                    elif zone_num == 5:
+                        description = "Capacità anaerobica (120-150% FTP)"
+                    elif zone_num == 6:
+                        description = "Potenza neuromuscolare (>150% FTP)"
+            elif name == 'recovery':
+                description = "Recupero (<55% FTP)"
+            elif name == 'threshold':
+                description = "Soglia (94-106% FTP)"
+            elif name == 'sweet_spot':
+                description = "Sweet Spot (88-94% FTP)"
+            
+            paces_sheet[f'C{row}'] = description
+            
+            # Applica bordi e formattazione a tutte le celle della riga
+            for col in ['A', 'B', 'C']:
+                cell = paces_sheet[f'{col}{row}']
+                cell.border = thin_border
+                cell.alignment = wrapped_alignment
+                
+                # Evidenzia le righe in base al tipo di sport attivo
+                if sport_type == "cycling":
+                    cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
+            
+            row += 1
+        
+        # Aggiungi una riga vuota dopo la sezione
+        row += 1
+    
+    # 3. Passi vasca per il nuoto
+    if swim_paces:
+        # Aggiungi intestazione sezione Swimming
+        paces_sheet.merge_cells(f'A{row}:C{row}')
+        paces_sheet[f'A{row}'] = 'PASSI VASCA PER IL NUOTO (min/100m)'
+        paces_sheet[f'A{row}'].font = subheader_font
+        paces_sheet[f'A{row}'].fill = swimming_fill
+        paces_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+        row += 1
+        
+        # Aggiungi i passi vasca dalla configurazione
+        for name, value in swim_paces.items():
+            paces_sheet[f'A{row}'] = name
+            
+            # Imposta il valore e applica il formato corretto
+            cell = paces_sheet[f'B{row}']
+            cell.value = format_pace_for_excel(value)
+            cell.data_type = TYPE_STRING  # Forza formato testo
+            
+            # Descrizione di default in base al nome
+            description = ""
+            if name.startswith('Z'):
+                zone_match = re.match(r'Z(\d)', name)
+                if zone_match:
+                    zone_num = int(zone_match.group(1))
+                    if zone_num == 1:
+                        description = "Passo molto facile (zona 1)"
+                    elif zone_num == 2:
+                        description = "Passo facile (zona 2)"
+                    elif zone_num == 3:
+                        description = "Passo moderato (zona 3)"
+                    elif zone_num == 4:
+                        description = "Passo duro (zona 4)"
+                    elif zone_num == 5:
+                        description = "Passo molto duro (zona 5)"
+            elif name == 'recovery':
+                description = "Passo di recupero"
+            elif name == 'threshold':
+                description = "Passo soglia"
+            elif name == 'sprint':
+                description = "Passo sprint"
+            
+            paces_sheet[f'C{row}'] = description
+            
+            # Applica bordi e formattazione a tutte le celle della riga
+            for col in ['A', 'B', 'C']:
+                cell = paces_sheet[f'{col}{row}']
+                cell.border = thin_border
+                cell.alignment = wrapped_alignment
+                
+                # Evidenzia le righe in base al tipo di sport attivo
+                if sport_type == "swimming":
+                    cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
+            
+            row += 1
+    
+    # Aggiungi una nota informativa alla fine
+    row += 1
+    paces_sheet.merge_cells(f'A{row}:C{row}')
+    if sport_type == "running":
+        paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è CORSA. Le zone Z1-Z5 si riferiscono ai ritmi in min/km.'
+    elif sport_type == "cycling":
+        paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è CICLISMO. Per la potenza, usa @pwr prima della zona (es. @pwr Z3).'
+    elif sport_type == "swimming":
+        paces_sheet[f'A{row}'] = '* Il tipo di sport attivo è NUOTO. Le zone Z1-Z5 si riferiscono ai passi vasca in min/100m.'
+    paces_sheet[f'A{row}'].font = Font(italic=True)
+    paces_sheet[f'A{row}'].alignment = wrapped_alignment
 
 def format_steps_for_excel(steps, sport_type="running"):
     """
@@ -1703,135 +1753,232 @@ def add_comments_to_yaml(yaml_file, descriptions):
     except Exception as e:
         logging.warning(f"Error adding comments to YAML: {str(e)}")
 
-def parse_workout_steps(steps_str, workout_name, sport_type="running"):
+
+def parse_workout_steps(steps_str, workout_name="", sport_type="running"):
     """
-    Parse a string of steps into a structured list.
+    Analizza una stringa contenente i passi dell'allenamento.
+    
+    Supporta il formato "label: value" o "label: value @ zone" e "repeat n:\\n  step1\\n  step2".
     
     Args:
-        steps_str: String containing the workout steps
-        workout_name: Name of the workout (for error messages)
-        sport_type: Type of sport ('running' or 'cycling')
+        steps_str: Stringa con i passi dell'allenamento
+        workout_name: Nome dell'allenamento (utile per logging)
+        sport_type: Tipo di sport (running, cycling, swimming)
         
     Returns:
-        List of structured workout steps
+        Lista di dizionari, uno per ogni passo
     """
-    # Prepare the list of steps
-    workout_steps = []
+    # Lista che conterrà i passi
+    steps = []
     
-    # Replace semicolons with newlines for uniform processing
-    # Ma prima correggi il formato "repeat X:" se è seguito da altre istruzioni sulla stessa riga
-    steps_str = re.sub(r'(repeat\s+\d+):(.*?);', r'\1:\n\2;', steps_str)
-    steps_str = re.sub(r';(\s*repeat\s+\d+:)', r';\n\1', steps_str)
-    steps_str = steps_str.replace(';', '\n')
+    # Se la stringa è vuota, restituisci una lista vuota
+    if not steps_str or steps_str.strip() == '':
+        return steps
     
-    # Manage steps with @spd notation for cycling
-    if sport_type == "cycling":
-        steps_str = steps_str.replace(' @ ', ' @spd ')
+    # Dividi la stringa in righe e rimuovi spazi iniziali/finali
+    lines = [line.strip() for line in steps_str.splitlines()]
     
-    # Split steps by lines
-    step_lines = steps_str.split('\n')
+    # Flag per tenere traccia delle ripetizioni
+    in_repeat = False
+    repeat_count = 0
+    repeat_steps = []
+    indent_level = 0
+    
+    # Per ogni riga
     i = 0
-    
-    # Process each line
-    while i < len(step_lines):
-        step_str = step_lines[i].strip()
-        if not step_str:
+    while i < len(lines):
+        line = lines[i].strip()
+        
+        # Salta righe vuote
+        if not line:
             i += 1
             continue
         
-        # Check specifically for repeat pattern
-        repeat_match = re.match(r'^repeat\s+(\d+):?$', step_str)
-        if repeat_match:
-            iterations = int(repeat_match.group(1))
-            
-            # Extract steps within the repeat
-            substeps = []
-            i += 1  # Move to the next line
-            
-            # Collect all indented steps after the repeat
-            while i < len(step_lines):
-                substep_str = step_lines[i].strip()
-                if not substep_str:
+        # Gestisci le ripetizioni
+        if line.lower().startswith('repeat '):
+            # Estrai il numero di ripetizioni
+            match = re.match(r'repeat\s+(\d+)(?:\s*:|$)', line)
+            if match:
+                repeat_count = int(match.group(1))
+                in_repeat = True
+                repeat_steps = []
+                
+                # Trova il livello di indentazione delle righe successive
+                for j in range(i+1, len(lines)):
+                    if lines[j].strip():  # Prima riga non vuota
+                        indent_level = len(lines[j]) - len(lines[j].lstrip())
+                        break
+                
+                i += 1  # Passa alla riga successiva
+                continue
+            else:
+                # Se la riga inizia con "repeat" ma non hai trovato un numero, 
+                # trattala come un normale passo (es. repetition potrebbe iniziare con "repeat")
+                pass
+        
+        # Se siamo in una sezione di ripetizioni
+        if in_repeat:
+            # Controlla se siamo usciti dall'indentazione delle ripetizioni
+            if line and line[0] != ' ' and i > 0 and lines[i-1].strip():
+                # Uscito dall'indentazione, ma la riga precedente non era vuota
+                # Questo significa che è un nuovo passo dopo le ripetizioni
+                in_repeat = False
+                
+                # Aggiungi la ripetizione ai passi
+                if repeat_count > 0 and repeat_steps:
+                    steps.append({'repeat': repeat_count, 'steps': repeat_steps})
+                
+                # Resetta per un nuovo ciclo di ripetizioni
+                repeat_count = 0
+                repeat_steps = []
+                indent_level = 0
+            else:
+                # Se la riga è indentata, è un passo nella ripetizione
+                if line and (line[0] == ' ' or line[0] == '\t'):
+                    # Rimuovi l'indentazione
+                    unindented_line = line.lstrip()
+                    
+                    # Parsing del passo
+                    step = parse_step_line(unindented_line, workout_name, sport_type)
+                    if step:
+                        repeat_steps.append(step)
+                    
                     i += 1
                     continue
-                
-                # If line doesn't look like a main step (doesn't contain a colon or is indented),
-                # consider it part of the repeat block
-                if not re.match(r'^(warmup|cooldown|interval|recovery|rest|repeat|other):', substep_str) or step_lines[i].startswith((' ', '\t')):
-                    # Identify the substep type and details
-                    substep_parts = substep_str.split(':')
-                    if len(substep_parts) < 2:
-                        logging.warning(f"Invalid substep format in {workout_name}: {substep_str}")
-                        i += 1
-                        continue
-                    
-                    substep_type = substep_parts[0].strip().lower()
-                    substep_details = ':'.join(substep_parts[1:]).strip()
-                    
-                    # Verify substep type is valid
-                    if substep_type not in VALID_STEP_TYPES:
-                        if substep_type == "steady":
-                            logging.warning(f"'steady' not supported in garmin-planner. Converted to 'interval' in {workout_name}")
-                            substep_type = "interval"
-                        else:
-                            logging.warning(f"Substep type '{substep_type}' not recognized in {workout_name}, converted to 'other'")
-                            substep_type = "other"
-                    
-                    # Handle cooldown inside repeat (likely an error)
-                    if substep_type == "cooldown":
-                        logging.warning(f"'cooldown' found inside a repeat in {workout_name}. Moved outside.")
-                        # Save the cooldown for later
-                        cooldown_details = substep_details
-                        i += 1
-                        # Add the repeat step with its substeps
-                        # Correct format for garmin-planner: 'repeat' key and iterations value
-                        repeat_step = {"repeat": iterations, "steps": copy.deepcopy(substeps)}
-                        workout_steps.append(repeat_step)
-                        # Add the cooldown as a separate step
-                        workout_steps.append({"cooldown": cooldown_details})
-                        break  # Exit the substep loop
-                    
-                    substeps.append({substep_type: substep_details})
+                elif not line:  # Riga vuota
                     i += 1
+                    continue
                 else:
-                    # This is a new main step, exit the repeat substeps loop
-                    break
-            
-            # If we collected substeps, add the repeat step
-            if substeps:
-                # Correct format for garmin-planner: 'repeat' key and iterations value
-                repeat_step = {"repeat": iterations, "steps": copy.deepcopy(substeps)}
-                workout_steps.append(repeat_step)
-            else:
-                # If no substeps were found, add a simple repeat
-                workout_steps.append({"repeat": iterations, "steps": []})
-                logging.warning(f"No substeps found for repeat in {workout_name}")
-        else:
-            # If not a repeat, it's a normal step
-            # Identify step type and details
-            step_parts = step_str.split(':')
-            if len(step_parts) < 2:
-                logging.warning(f"Invalid step format in {workout_name}: {step_str}")
-                i += 1
-                continue
-            
-            step_type = step_parts[0].strip().lower()
-            step_details = ':'.join(step_parts[1:]).strip()
-            
-            # Verify step type is valid for garmin-planner
-            if step_type not in VALID_STEP_TYPES:
-                if step_type == "steady":
-                    logging.warning(f"'steady' is not supported in garmin-planner. Converted to 'interval' in {workout_name}")
-                    step_type = "interval"
-                else:
-                    logging.warning(f"Step type '{step_type}' not recognized in {workout_name}, converted to 'other'")
-                    step_type = "other"
-            
-            # Add a normal step
-            workout_steps.append({step_type: step_details})
-            i += 1
+                    # Finito con le ripetizioni
+                    in_repeat = False
+                    
+                    # Aggiungi la ripetizione ai passi
+                    if repeat_count > 0 and repeat_steps:
+                        steps.append({'repeat': repeat_count, 'steps': repeat_steps})
+                    
+                    # Resetta per un nuovo ciclo di ripetizioni
+                    repeat_count = 0
+                    repeat_steps = []
+                    indent_level = 0
+        
+        # Parsing di un passo normale
+        step = parse_step_line(line, workout_name, sport_type)
+        if step:
+            steps.append(step)
+        
+        i += 1
     
-    return workout_steps
+    # Aggiungi l'ultima ripetizione se usciamo dal ciclo ancora in repeat
+    if in_repeat and repeat_count > 0 and repeat_steps:
+        steps.append({'repeat': repeat_count, 'steps': repeat_steps})
+    
+    return steps
+
+
+def parse_step_line(line, workout_name="", sport_type="running"):
+    """
+    Analizza una singola riga di passo.
+    
+    Args:
+        line: Riga da analizzare
+        workout_name: Nome dell'allenamento
+        sport_type: Tipo di sport
+        
+    Returns:
+        Dizionario con il tipo di passo e i dettagli, o None se non valido
+    """
+    # Salta righe vuote o commenti
+    if not line or line.startswith('#') or line.startswith('//'):
+        return None
+    
+    # Rimuovi eventuali commenti
+    if '#' in line:
+        line = line.split('#')[0].strip()
+    if '//' in line:
+        line = line.split('//')[0].strip()
+    
+    # Cerca di estrarre il tipo di passo e i dettagli
+    match = re.match(r'^([\w-]+)\s*:\s*(.+)$', line)
+    if match:
+        step_type = match.group(1).strip().lower()
+        step_detail = match.group(2).strip()
+        
+        # Verifica se è repeat (questo è solo per compatibilità)
+        if step_type == 'repeat' and step_detail.isdigit():
+            return {'repeat': int(step_detail), 'steps': []}
+        
+        # Se il tipo è repeat ma il dettaglio non è un numero, trattalo come normale
+        
+        # Normalizza i tipi di passi
+        if step_type in ['running', 'cycling', 'swimming']:
+            # Questo è un tipo di sport, non un passo
+            # Ignoralo o aggiungilo come metadato
+            step_type = 'interval'
+        
+        # Sostituzioni per uniformare i tipi di passi
+        step_type_map = {
+            'run': 'interval',
+            'cycle': 'interval',
+            'swim': 'interval',
+            'bike': 'interval',
+            'rest': 'recovery',
+            'rec': 'recovery',
+            'cool': 'cooldown',
+            'warm': 'warmup',
+        }
+        
+        # Applica le sostituzioni se necessario
+        if step_type in step_type_map:
+            step_type = step_type_map[step_type]
+        
+        # Gestisci @ per i target
+        target_type = ''
+        
+        # Per ciclismo, se non ci sono target specifici, usa potenza come default
+        if sport_type == 'cycling' and '@' not in step_detail:
+            # Verifica se sembra una zona (Z1-Z5)
+            zone_match = re.search(r'\b(Z[1-5])\b', step_detail)
+            if zone_match:
+                target_type = '@pwr '
+                # Ricomponi il dettaglio inserendo @pwr prima della zona
+                parts = step_detail.split(zone_match.group(0))
+                step_detail = parts[0] + target_type + zone_match.group(0) + parts[1]
+        
+        # Per nuoto, se non ci sono target specifici, usa swim come default
+        elif sport_type == 'swimming' and '@' not in step_detail:
+            # Verifica se sembra una zona (Z1-Z5)
+            zone_match = re.search(r'\b(Z[1-5])\b', step_detail)
+            if zone_match:
+                target_type = '@swim '
+                # Ricomponi il dettaglio inserendo @swim prima della zona
+                parts = step_detail.split(zone_match.group(0))
+                step_detail = parts[0] + target_type + zone_match.group(0) + parts[1]
+        
+        return {step_type: step_detail}
+    else:
+        # Se non riesci a estrarre il tipo e i dettagli, potrebbe comunque essere un passo valido
+        # ma in un formato diverso (come "intervallo 5min Z2")
+        words = line.split()
+        if len(words) >= 2:
+            try:
+                step_type = words[0].lower()
+                step_detail = ' '.join(words[1:])
+                
+                # Controlla se il tipo è valido
+                valid_types = ['interval', 'recovery', 'warmup', 'cooldown', 'repeat']
+                
+                if step_type not in valid_types:
+                    # Potrebbe essere un tipo diverso, imposta a interval di default
+                    step_detail = line
+                    step_type = 'interval'
+                
+                return {step_type: step_detail}
+            except:
+                # In caso di errore, usa un tipo di passo predefinito
+                return {'interval': line}
+        else:
+            # Se non c'è abbastanza informazione, considera come intervallo generico
+            return {'interval': line}
 
 
 def auto_adjust_column_widths(worksheet):

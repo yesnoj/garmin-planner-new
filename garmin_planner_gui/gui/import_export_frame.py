@@ -479,6 +479,8 @@ class ImportExportFrame(ttk.Frame):
     def export_to_file(self):
         """Esporta allenamenti in un file YAML (o Excel in base all'estensione)"""
         import os  # Reimportiamo os per sicurezza
+        from planner.excel_to_yaml_converter import normalize_pace_format
+        from collections import OrderedDict
         
         # Ottieni il nome del file destinazione
         filename = self.export_dest_file_var.get().strip()
@@ -560,34 +562,8 @@ class ImportExportFrame(ttk.Frame):
                                           parent=self)
                         return
                 
-                # CORREZIONE: Normalizza e correggi i dati prima di salvarli
-                # Funzione per normalizzare i ritmi
-                def normalize_pace(pace_value):
-                    import re
-                    # Se è in formato "NNN:00" (secondi totali)
-                    if isinstance(pace_value, str) and re.match(r'^\d+:\d{2}$', pace_value):
-                        try:
-                            parts = pace_value.split(':')
-                            if len(parts) == 2 and parts[1] == '00':
-                                total_seconds = int(parts[0])
-                                minutes = total_seconds // 60
-                                remainder = total_seconds % 60
-                                return f"{minutes}:{remainder:02d}"
-                        except (ValueError, IndexError):
-                            pass
-                    
-                    # Se è in formato "0:MM" (dove MM sono i minuti)
-                    if isinstance(pace_value, str) and re.match(r'^0:\d{2}$', pace_value):
-                        try:
-                            minutes = int(pace_value.split(':')[1])
-                            return f"{minutes}:00"
-                        except (ValueError, IndexError):
-                            pass
-                            
-                    return pace_value
-                
-                # CORREZIONE: Rimuovi i paces duplicati dalla sezione config se sono già a livello root
-                # Questo è fondamentale per evitare la duplicazione vista nel bug
+                # Rimuovi i paces duplicati dalla sezione config se sono già a livello root
+                # Questo è fondamentale per evitare la duplicazione
                 if 'paces' in data and 'config' in data and 'paces' in data['config']:
                     del data['config']['paces']
                     
@@ -597,18 +573,18 @@ class ImportExportFrame(ttk.Frame):
                 if 'power_values' in data and 'config' in data and 'power_values' in data['config']:
                     del data['config']['power_values']
                     
-                # Normalizza i ritmi
+                # Normalizza i ritmi a livello root
                 if 'paces' in data:
                     normalized_paces = {}
                     for name, value in data['paces'].items():
-                        normalized_paces[name] = normalize_pace(value)
+                        normalized_paces[name] = normalize_pace_format(value)
                     data['paces'] = normalized_paces
                     
                 # Normalizza i passi vasca
                 if 'swim_paces' in data:
                     normalized_swim_paces = {}
                     for name, value in data['swim_paces'].items():
-                        normalized_swim_paces[name] = normalize_pace(value)
+                        normalized_swim_paces[name] = normalize_pace_format(value)
                     data['swim_paces'] = normalized_swim_paces
                 
                 # Se clean è attivo, pulisci i dati
@@ -644,49 +620,24 @@ class ImportExportFrame(ttk.Frame):
                     # Copia la configurazione per non modificare l'originale
                     config = dict(self.controller.config['workout_config'])
                     
-                    # CORREZIONE: Estrai e normalizza i ritmi, poi inseriscili a livello radice
+                    # Estrai e normalizza i ritmi, poi inseriscili a livello radice
                     # e rimuovili dalla configurazione per evitare la duplicazione
                     for section in ['paces', 'power_values', 'swim_paces']:
                         if section in config:
                             data[section] = config.pop(section)
                     
-                    # CORREZIONE: Normalizza i ritmi
-                    def normalize_pace(pace_value):
-                        import re
-                        # Se è in formato "NNN:00" (secondi totali)
-                        if isinstance(pace_value, str) and re.match(r'^\d+:\d{2}$', pace_value):
-                            try:
-                                parts = pace_value.split(':')
-                                if len(parts) == 2 and parts[1] == '00':
-                                    total_seconds = int(parts[0])
-                                    minutes = total_seconds // 60
-                                    remainder = total_seconds % 60
-                                    return f"{minutes}:{remainder:02d}"
-                            except (ValueError, IndexError):
-                                pass
-                        
-                        # Se è in formato "0:MM" (dove MM sono i minuti)
-                        if isinstance(pace_value, str) and re.match(r'^0:\d{2}$', pace_value):
-                            try:
-                                minutes = int(pace_value.split(':')[1])
-                                return f"{minutes}:00"
-                            except (ValueError, IndexError):
-                                pass
-                                
-                        return pace_value
-                    
                     # Normalizza i ritmi
                     if 'paces' in data:
                         normalized_paces = {}
                         for name, value in data['paces'].items():
-                            normalized_paces[name] = normalize_pace(value)
+                            normalized_paces[name] = normalize_pace_format(value)
                         data['paces'] = normalized_paces
                         
                     # Normalizza i passi vasca
                     if 'swim_paces' in data:
                         normalized_swim_paces = {}
                         for name, value in data['swim_paces'].items():
-                            normalized_swim_paces[name] = normalize_pace(value)
+                            normalized_swim_paces[name] = normalize_pace_format(value)
                         data['swim_paces'] = normalized_swim_paces
                     
                     # Il resto della configurazione va in config
@@ -711,9 +662,52 @@ class ImportExportFrame(ttk.Frame):
             
             # Esporta in base al formato
             if ext in ['.yaml', '.yml']:
-                # Esporta in YAML
-                # Prima normalizza tutti i ritmi
-                normalized_data = self.prepare_data_for_yaml_export(data)
+                # Prepara i dati in un ordine coerente per il YAML
+                ordered_data = {}
+                
+                # 1. Prima config con ordine specifico interno
+                if 'config' in data:
+                    config_ordered = {}
+                    
+                    # Ordine delle sezioni all'interno di config
+                    config_sections = [
+                        'margins',
+                        'name_prefix',
+                        'sport_type',
+                        'athlete_name',
+                        'race_day',
+                        'preferred_days',
+                        'heart_rates'  # heart_rates sempre alla fine di config
+                    ]
+                    
+                    # Aggiungi le sezioni di config nell'ordine specificato
+                    for section in config_sections:
+                        if section in data['config']:
+                            config_ordered[section] = data['config'][section]
+                    
+                    # Aggiungi eventuali sezioni non specificate nell'ordine
+                    for key, value in data['config'].items():
+                        if key not in config_ordered:
+                            config_ordered[key] = value
+                    
+                    ordered_data['config'] = config_ordered
+                
+                # 2. Poi athlete_name
+                if 'athlete_name' in data:
+                    ordered_data['athlete_name'] = data['athlete_name']
+                
+                # 3. Poi le sezioni di ritmi, potenza, ecc.
+                for section in ['paces', 'power_values', 'swim_paces']:
+                    if section in data:
+                        ordered_data[section] = data[section]
+                
+                # 4. Infine gli allenamenti - tutte le chiavi che non sono già state processate
+                for key, value in data.items():
+                    if key not in ordered_data:
+                        ordered_data[key] = value
+                
+                # Normalizza tutti i ritmi prima dell'esportazione
+                normalized_data = self.prepare_data_for_yaml_export(ordered_data)
                 
                 with open(filename, 'w', encoding='utf-8') as f:
                     yaml.dump(normalized_data, f, default_flow_style=False, sort_keys=False, Dumper=NoAliasDumper)
