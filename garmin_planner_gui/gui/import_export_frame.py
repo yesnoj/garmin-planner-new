@@ -15,6 +15,13 @@ import yaml
 import re
 import datetime
 from .styles import COLORS
+from planner.excel_to_yaml_converter import normalize_pace_format
+
+
+class NoAliasDumper(yaml.SafeDumper):
+    """Custom YAML dumper that ignores aliases"""
+    def ignore_aliases(self, data):
+        return True
 
 class ImportExportFrame(ttk.Frame):
     """Frame per l'importazione e l'esportazione degli allenamenti"""
@@ -151,6 +158,45 @@ class ImportExportFrame(ttk.Frame):
         ttk.Button(log_buttons, text="Copia negli appunti", 
                   command=self.copy_log_to_clipboard).pack(side=tk.LEFT, padx=5)
 
+
+
+    def prepare_data_for_yaml_export(self, data):  # Assicurati che ci sia il parametro 'data'
+        """
+        Prepara i dati per l'esportazione in YAML, normalizzando i ritmi e altri valori.
+        
+        Args:
+            data: Dizionario con i dati da esportare
+            
+        Returns:
+            Dizionario con i dati normalizzati
+        """
+        import copy
+        
+        # Crea una copia per non modificare l'originale
+        normalized_data = copy.deepcopy(data)
+        
+        # Normalizza i ritmi per la corsa se presenti
+        if 'paces' in normalized_data:
+            for name, value in normalized_data['paces'].items():
+                normalized_data['paces'][name] = normalize_pace_format(value)
+        
+        # Normalizza i passi vasca per il nuoto se presenti
+        if 'swim_paces' in normalized_data:
+            for name, value in normalized_data['swim_paces'].items():
+                normalized_data['swim_paces'][name] = normalize_pace_format(value)
+        
+        # Controlla anche se ci sono ritmi nella configurazione
+        if 'config' in normalized_data and 'paces' in normalized_data['config']:
+            for name, value in normalized_data['config']['paces'].items():
+                normalized_data['config']['paces'][name] = normalize_pace_format(value)
+        
+        # Controlla anche se ci sono passi vasca nella configurazione
+        if 'config' in normalized_data and 'swim_paces' in normalized_data['config']:
+            for name, value in normalized_data['config']['swim_paces'].items():
+                normalized_data['config']['swim_paces'][name] = normalize_pace_format(value)
+        
+        return normalized_data
+
     def create_yaml_import_tab(self, parent):
         """Crea la scheda per l'importazione da file YAML/JSON"""
         # Configurazione del parent per espandersi correttamente
@@ -209,6 +255,9 @@ class ImportExportFrame(ttk.Frame):
         spacer_frame.grid(row=4, column=0, sticky="nsew")    
 
     
+
+
+
     def create_excel_import_tab(self, parent):
         """Crea la scheda per l'importazione da file Excel"""
         # Frame principale
@@ -662,8 +711,11 @@ class ImportExportFrame(ttk.Frame):
             # Esporta in base al formato
             if ext in ['.yaml', '.yml']:
                 # Esporta in YAML
+                # Prima normalizza tutti i ritmi
+                normalized_data = self.prepare_data_for_yaml_export(data)
+                
                 with open(filename, 'w', encoding='utf-8') as f:
-                    yaml.dump(data, f, default_flow_style=False)
+                    yaml.dump(normalized_data, f, default_flow_style=False, sort_keys=False, Dumper=NoAliasDumper)
                 self.write_log("Esportato in formato YAML")
             elif ext == '.xlsx':
                 # Esporta in Excel
@@ -945,14 +997,24 @@ class ImportExportFrame(ttk.Frame):
                     self.controller.config['workout_config'] = {}
                 
                 # Aggiorna le varie sezioni
-                for section in ['paces', 'speeds', 'swim_paces', 'heart_rates', 'power_values', 'margins']:
+                for section in ['paces', 'speeds', 'swim_paces', 'power_values', 'margins']:
                     if section in new_config:
                         # Sostituzione completa invece di aggiornamento per evitare valori predefiniti
                         self.controller.config['workout_config'][section] = new_config[section]
+                        self.write_log(f"Sezione {section} aggiornata dalla configurazione")
                     # Se importiamo da Excel e la sezione non è presente, la rimuoviamo dalla configurazione
                     elif ext == '.xlsx' and section in self.controller.config['workout_config']:
                         del self.controller.config['workout_config'][section]
                         self.write_log(f"Sezione {section} rimossa perché non presente nel file importato")
+                
+                # Assicurati di estrarre e applicare le frequenze cardiache
+                if 'heart_rates' in new_config:
+                    self.controller.config['workout_config']['heart_rates'] = new_config['heart_rates']
+                    self.write_log(f"Frequenze cardiache aggiornate dalla configurazione")
+                # Se importiamo da Excel e le frequenze cardiache non sono presenti, le rimuoviamo dalla configurazione
+                elif ext == '.xlsx' and 'heart_rates' in self.controller.config['workout_config']:
+                    del self.controller.config['workout_config']['heart_rates']
+                    self.write_log(f"Frequenze cardiache rimosse perché non presenti nel file importato")
                 
                 # Altri parametri
                 for param in ['name_prefix', 'sport_type', 'athlete_name']:
@@ -981,12 +1043,14 @@ class ImportExportFrame(ttk.Frame):
                         self.controller.config['workout_config'] = {}
                     # Sovrascrive la sezione invece di aggiornare
                     self.controller.config['workout_config'][config_section] = section_data
-                    self.write_log(f"Sezione {config_section} aggiornata")
+                    self.write_log(f"Sezione {config_section} aggiornata dalla radice del file")
                 # Se la sezione non è presente nel file ma è nella configurazione e stiamo importando da Excel,
                 # la rimuoviamo per evitare di mantenere valori predefiniti
                 elif ext == '.xlsx' and 'workout_config' in self.controller.config and config_section in self.controller.config['workout_config']:
-                    del self.controller.config['workout_config'][config_section]
-                    self.write_log(f"Sezione {config_section} rimossa perché non presente nel file importato")
+                    # Verifica se non è presente nemmeno nella configurazione
+                    if 'config' not in data or config_section not in data['config']:
+                        del self.controller.config['workout_config'][config_section]
+                        self.write_log(f"Sezione {config_section} rimossa perché non presente nel file importato")
             
             # Conta gli allenamenti
             total_workouts = sum(1 for name in data.keys() if name not in config_keys)
@@ -1032,6 +1096,9 @@ class ImportExportFrame(ttk.Frame):
             
             # Log
             self.write_log(f"Importazione completata: {imported_workouts} importati, {skipped_workouts} saltati")
+            
+            # Aggiungi ai file recenti
+            self.add_to_recent_files(filename)
             
         except Exception as e:
             import traceback
@@ -2419,3 +2486,4 @@ class ImportExportFrame(ttk.Frame):
         
         # Log
         self.write_log("Disconnesso da Garmin Connect")
+
