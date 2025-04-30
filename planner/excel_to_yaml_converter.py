@@ -38,6 +38,89 @@ class NoAliasDumper(yaml.SafeDumper):
 VALID_STEP_TYPES = {"warmup", "cooldown", "interval", "recovery", "rest", "repeat", "other"}
 
 
+def extract_heart_rates_from_excel(excel_file):
+    """
+    Funzione dedicata all'estrazione delle frequenze cardiache da un file Excel.
+    Utilizza direttamente openpyxl per leggere le celle.
+    
+    Args:
+        excel_file: Percorso del file Excel
+        
+    Returns:
+        Dizionario contenente le frequenze cardiache estratte
+    """
+    import openpyxl
+    import os
+    
+    # Verifica che il file esista
+    if not os.path.exists(excel_file):
+        print(f"File non trovato: {excel_file}")
+        return {}
+    
+    # Dizionario per i risultati
+    heart_rates = {}
+    
+    try:
+        # Carica il workbook
+        wb = openpyxl.load_workbook(excel_file, data_only=True)
+        
+        # Verifica se esiste il foglio HeartRates
+        if 'HeartRates' not in wb.sheetnames:
+            print("Foglio HeartRates non trovato nel file Excel")
+            return {}
+        
+        # Ottieni il foglio
+        hr_sheet = wb['HeartRates']
+        
+        # Stampa le dimensioni per debug
+        print(f"Dimensioni foglio HeartRates: {hr_sheet.dimensions}")
+        print(f"Numero righe: {hr_sheet.max_row}, Numero colonne: {hr_sheet.max_column}")
+        
+        # Stampa le prime 10 celle per debug
+        for row in range(1, min(10, hr_sheet.max_row + 1)):
+            name = hr_sheet.cell(row=row, column=1).value
+            value = hr_sheet.cell(row=row, column=2).value
+            print(f"Riga {row}: {name} = {value} (tipo: {type(value)})")
+        
+        # Processa il foglio riga per riga, iniziando dalla seconda riga (indice 2)
+        for row in range(2, hr_sheet.max_row + 1):
+            # Ottieni il nome e il valore
+            name = hr_sheet.cell(row=row, column=1).value
+            value = hr_sheet.cell(row=row, column=2).value
+            
+            # Verifica che entrambi non siano None
+            if name is not None and value is not None:
+                # Converti il nome in stringa e rimuovi spazi in eccesso
+                name_str = str(name).strip()
+                
+                # Gestisci i vari tipi di valore
+                if isinstance(value, (int, float)):
+                    heart_rates[name_str] = int(value)
+                    print(f"Aggiunta frequenza cardiaca numerica {name_str} = {heart_rates[name_str]}")
+                elif isinstance(value, str):
+                    heart_rates[name_str] = value.strip()
+                    print(f"Aggiunta frequenza cardiaca stringa {name_str} = {heart_rates[name_str]}")
+                else:
+                    # Per qualsiasi altro tipo, converti in stringa
+                    heart_rates[name_str] = str(value).strip()
+                    print(f"Aggiunta frequenza cardiaca altro tipo {name_str} = {heart_rates[name_str]}")
+        
+        # Verifica se abbiamo trovato delle frequenze cardiache
+        if heart_rates:
+            print(f"Estratte {len(heart_rates)} frequenze cardiache dal foglio HeartRates:")
+            for name, value in heart_rates.items():
+                print(f"  {name}: {value}")
+        else:
+            print("Nessuna frequenza cardiaca trovata nel foglio HeartRates")
+            
+        return heart_rates
+    
+    except Exception as e:
+        import traceback
+        print(f"Errore nell'estrazione delle frequenze cardiache: {str(e)}")
+        traceback.print_exc()
+        return {}
+
 def extract_paces_and_speeds_from_excel(excel_file):
     """
     Estrae ritmi per la corsa, zone di potenza FTP per il ciclismo, passi vasca per il nuoto
@@ -85,6 +168,14 @@ def extract_paces_and_speeds_from_excel(excel_file):
             if isinstance(value, str) and re.match(r'^\d{1,2}:\d{2}$', value) and not value.startswith('0:'):
                 return value
                 
+            # Se è un formato hh:mm:ss
+            if isinstance(value, str) and re.match(r'^\d{1,2}:\d{2}:\d{2}$', value):
+                h, m, s = map(int, value.split(':'))
+                total_seconds = h * 3600 + m * 60 + s
+                minutes = total_seconds // 60
+                seconds = total_seconds % 60
+                return f"{minutes}:{seconds:02d}"
+                
             # Per altri formati
             return seconds_to_mmss(value)
         
@@ -102,19 +193,19 @@ def extract_paces_and_speeds_from_excel(excel_file):
                 col1 = sheet.cell(row=row_idx, column=2).value
                 col0_str = str(col0) if col0 is not None else ""
                 
-                # Stampa la riga per debug
+                # Debug: stampa la riga
                 print(f"Riga {row_idx}: {col0_str} - {col1} ({type(col1)})")
                 
                 # Controlla se è un'intestazione di sezione
-                if col0_str and "RITMI PER LA CORSA" in col0_str:
+                if col0_str and "RITMI PER LA CORSA" in col0_str.upper():
                     current_section = 'running'
                     print(f"Trovata sezione RUNNING a riga {row_idx}")
                     continue
-                elif col0_str and "POTENZA PER IL CICLISMO" in col0_str:
+                elif col0_str and "POTENZA PER IL CICLISMO" in col0_str.upper():
                     current_section = 'power'
                     print(f"Trovata sezione POWER a riga {row_idx}")
                     continue
-                elif col0_str and "PASSI VASCA PER IL NUOTO" in col0_str:
+                elif col0_str and "PASSI VASCA PER IL NUOTO" in col0_str.upper():
                     current_section = 'swimming'
                     print(f"Trovata sezione SWIMMING a riga {row_idx}")
                     continue
@@ -130,11 +221,14 @@ def extract_paces_and_speeds_from_excel(excel_file):
                     
                     # Aggiungi al dizionario appropriato con formattazione corretta
                     if current_section == 'running':
+                        # Estrai il valore come stringa da qualsiasi tipo
+                        value_str = str(col1).strip()
+                        
                         # Gestisci il formato specifico 0:MM -> MM:00
-                        if isinstance(col1, str) and re.match(r'^0:\d{2}$', col1):
-                            minutes = int(col1.split(':')[1])
+                        if re.match(r'^0:\d{2}$', value_str):
+                            minutes = int(value_str.split(':')[1])
                             paces[name] = f"{minutes}:00"
-                            print(f"Convertito formato 0:MM: {col1} → {minutes}:00")
+                            print(f"Convertito formato 0:MM: {value_str} → {minutes}:00")
                         # Converti in formato MM:SS indipendentemente dal tipo originale
                         elif isinstance(col1, (int, float)):
                             # È già in secondi
@@ -145,22 +239,22 @@ def extract_paces_and_speeds_from_excel(excel_file):
                             paces[name] = seconds_to_mmss(total_seconds)
                         elif isinstance(col1, str):
                             # Prova a interpretare come MM:SS o HH:MM:SS
-                            if re.match(r'^\d{1,2}:\d{2}$', col1) and not col1.startswith('0:'):
-                                paces[name] = col1  # Già in formato MM:SS
-                            elif re.match(r'^\d{2}:\d{2}:\d{2}$', col1):
-                                parts = col1.split(':')
+                            if re.match(r'^\d{1,2}:\d{2}$', value_str) and not value_str.startswith('0:'):
+                                paces[name] = value_str  # Già in formato MM:SS
+                            elif re.match(r'^\d{1,2}:\d{2}:\d{2}$', value_str):
+                                parts = value_str.split(':')
                                 total_seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
                                 paces[name] = seconds_to_mmss(total_seconds)
                             else:
                                 # Prova a convertire in float e poi in MM:SS
                                 try:
-                                    value_seconds = float(col1.replace(',', '.'))
+                                    value_seconds = float(value_str.replace(',', '.'))
                                     paces[name] = seconds_to_mmss(value_seconds)
                                 except ValueError:
-                                    paces[name] = str(col1)  # Fallback a stringa
+                                    paces[name] = value_str  # Fallback a stringa
                         else:
                             # Tipo sconosciuto, converti a stringa
-                            paces[name] = str(col1)
+                            paces[name] = value_str
                         
                         # Normalizza il valore finale prima di salvarlo
                         paces[name] = normalize_pace_value(paces[name])
@@ -171,11 +265,14 @@ def extract_paces_and_speeds_from_excel(excel_file):
                         power_values[name] = str(col1) if col1 is not None else ""
                     
                     elif current_section == 'swimming':
+                        # Estrai il valore come stringa da qualsiasi tipo
+                        value_str = str(col1).strip()
+                        
                         # Gestisci il formato specifico 0:MM -> MM:00
-                        if isinstance(col1, str) and re.match(r'^0:\d{2}$', col1):
-                            minutes = int(col1.split(':')[1])
+                        if re.match(r'^0:\d{2}$', value_str):
+                            minutes = int(value_str.split(':')[1])
                             swim_paces[name] = f"{minutes}:00"
-                            print(f"Convertito formato 0:MM: {col1} → {minutes}:00")
+                            print(f"Convertito formato 0:MM: {value_str} → {minutes}:00")
                         # Stesso processo di conversione per i passi vasca
                         elif isinstance(col1, (int, float)):
                             swim_paces[name] = seconds_to_mmss(col1)
@@ -183,20 +280,20 @@ def extract_paces_and_speeds_from_excel(excel_file):
                             total_seconds = col1.hour * 3600 + col1.minute * 60 + col1.second
                             swim_paces[name] = seconds_to_mmss(total_seconds)
                         elif isinstance(col1, str):
-                            if re.match(r'^\d{1,2}:\d{2}$', col1) and not col1.startswith('0:'):
-                                swim_paces[name] = col1
-                            elif re.match(r'^\d{2}:\d{2}:\d{2}$', col1):
-                                parts = col1.split(':')
+                            if re.match(r'^\d{1,2}:\d{2}$', value_str) and not value_str.startswith('0:'):
+                                swim_paces[name] = value_str
+                            elif re.match(r'^\d{1,2}:\d{2}:\d{2}$', value_str):
+                                parts = value_str.split(':')
                                 total_seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
                                 swim_paces[name] = seconds_to_mmss(total_seconds)
                             else:
                                 try:
-                                    value_seconds = float(col1.replace(',', '.'))
+                                    value_seconds = float(value_str.replace(',', '.'))
                                     swim_paces[name] = seconds_to_mmss(value_seconds)
                                 except ValueError:
-                                    swim_paces[name] = str(col1)
+                                    swim_paces[name] = value_str
                         else:
-                            swim_paces[name] = str(col1)
+                            swim_paces[name] = value_str
                         
                         # Normalizza il valore finale prima di salvarlo
                         swim_paces[name] = normalize_pace_value(swim_paces[name])
@@ -258,13 +355,37 @@ def format_pace_for_excel(pace_value):
         minutes = int(pace_value.split(':')[1])
         return f"{minutes}:00"
     
+    # Se è in formato ssss:00 (es. '380:00' - secondi totali)
+    if isinstance(pace_value, str) and re.match(r'^\d+:00$', pace_value):
+        try:
+            total_seconds = int(pace_value.split(':')[0])
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            return f"{minutes}:{seconds:02d}"
+        except (ValueError, IndexError):
+            pass
+    
     # Se è già in formato standard mm:ss (es. '4:30')
     if isinstance(pace_value, str) and re.match(r'^\d{1,2}:\d{2}$', pace_value):
         return pace_value
     
+    # Se è un intero o float (secondi)
+    if isinstance(pace_value, (int, float)):
+        minutes = int(pace_value) // 60
+        seconds = int(pace_value) % 60
+        return f"{minutes}:{seconds:02d}"
+    
+    # Se è un oggetto time
+    if hasattr(pace_value, 'hour') and hasattr(pace_value, 'minute') and hasattr(pace_value, 'second'):
+        total_seconds = pace_value.hour * 3600 + pace_value.minute * 60 + pace_value.second
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}:{seconds:02d}"
+    
     # Altre conversioni possono essere aggiunte qui se necessario
     
-    return pace_value
+    return str(pace_value)
+
 
 def normalize_pace_format(value):
     """
@@ -333,7 +454,6 @@ def normalize_pace_format(value):
     
     # Se non è riconosciuto, ritorna il valore originale
     return value
-
 
 def yaml_to_excel(yaml_data, excel_file, create_new=False):
     """
@@ -1222,6 +1342,7 @@ def format_steps_for_excel(steps, sport_type="running"):
     
     return "\n".join(formatted_steps)
 
+
 def update_heart_rates_sheet(sheet, heart_rates):
     """
     Aggiorna il foglio HeartRates con i dati dalle frequenze cardiache YAML.
@@ -1230,6 +1351,8 @@ def update_heart_rates_sheet(sheet, heart_rates):
         sheet: Foglio Excel HeartRates
         heart_rates: Dizionario con le frequenze cardiache
     """
+    from openpyxl.cell.cell import TYPE_STRING
+    
     # Cancella le righe esistenti (tranne l'intestazione)
     for row in range(sheet.max_row, 1, -1):
         sheet.delete_rows(row)
@@ -1238,7 +1361,18 @@ def update_heart_rates_sheet(sheet, heart_rates):
     row = 2
     for name, value in heart_rates.items():
         sheet.cell(row=row, column=1).value = name
-        sheet.cell(row=row, column=2).value = value
+        
+        # Imposta il valore nella colonna B
+        cell = sheet.cell(row=row, column=2)
+        
+        # Se è una stringa che contiene percentuali o trattini, mantienila come testo
+        if isinstance(value, str) and ('%' in value or '-' in value):
+            cell.value = value
+            cell.data_type = TYPE_STRING  # Forza il tipo di dati come stringa
+        else:
+            # Se è un valore numerico, può rimanere tale
+            cell.value = value
+        
         row += 1
 
 
@@ -1284,12 +1418,15 @@ def update_paces_sheet(sheet, paces):
 def update_config_sheet(sheet, config):
     """
     Aggiorna il foglio Config con i dati dalla configurazione YAML.
-    Esclude i valori già presenti nel foglio Paces (paces, power_values, swim_paces).
+    Esclude i valori già presenti nel foglio Paces (paces, power_values, swim_paces) 
+    e rimuove sport_type poiché non utilizzato altrove.
     
     Args:
         sheet: Foglio Excel Config
         config: Dizionario con la configurazione
     """
+    from openpyxl.cell.cell import TYPE_STRING
+    
     # Mappa delle righe da aggiornare
     config_rows = {}
     
@@ -1299,12 +1436,12 @@ def update_config_sheet(sheet, config):
         if key:
             config_rows[key] = row
     
-    # Liste delle chiavi da gestire - RIMUOVERE 'sport_type'
+    # Liste delle chiavi da gestire - RIMOSSO 'sport_type'
     priority_keys = ['name_prefix', 'margins', 'race_day', 'preferred_days', 'athlete_name']
     
     # Chiavi da NON includere nelle righe di Config in quanto già presenti nei loro fogli dedicati
     # o perché non devono essere mostrate nel foglio Config
-    excluded_keys = ['paces', 'speeds', 'swim_paces', 'heart_rates', 'power_values']
+    excluded_keys = ['paces', 'speeds', 'swim_paces', 'heart_rates', 'power_values', 'sport_type']
     
     # Prima gestisci le chiavi prioritarie
     for key in priority_keys:
@@ -1346,7 +1483,9 @@ def update_config_sheet(sheet, config):
                     # Converti dizionari, liste o altri tipi complessi in stringhe
                     if isinstance(value, (dict, list, tuple, set)):
                         if value:  # Se non è vuoto
-                            sheet.cell(row=row_index, column=2).value = str(value)
+                            cell = sheet.cell(row=row_index, column=2)
+                            cell.value = str(value)
+                            cell.data_type = TYPE_STRING
                         else:
                             sheet.cell(row=row_index, column=2).value = ""  # Dizionario vuoto -> stringa vuota
                     else:
@@ -1366,7 +1505,9 @@ def update_config_sheet(sheet, config):
             if value is not None:
                 if isinstance(value, (dict, list, tuple, set)):
                     if value:  # Se non è vuoto
-                        sheet.cell(row=row_index, column=2).value = str(value)
+                        cell = sheet.cell(row=row_index, column=2)
+                        cell.value = str(value)
+                        cell.data_type = TYPE_STRING
                     else:
                         sheet.cell(row=row_index, column=2).value = ""  # Dizionario vuoto -> stringa vuota
                 else:
@@ -1737,6 +1878,7 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
         import openpyxl
         from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
         from openpyxl.utils import get_column_letter
+        from openpyxl.cell.cell import TYPE_STRING
     except ImportError:
         logging.error("ERROR: openpyxl library is not installed.")
         logging.error("Install openpyxl with: pip install openpyxl")
@@ -1789,8 +1931,16 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     
     # Imposta i margini appropriati 
     config_sheet['A4'] = 'margins'
-    config_sheet['B4'] = '0:03'   # faster in min:sec
-    config_sheet['C4'] = '0:03'   # slower in min:sec
+    
+    # Imposta valori come stringhe per i campi che potrebbero essere interpretati come orari
+    cell_b4 = config_sheet['B4']
+    cell_b4.value = '0:03'   # faster in min:sec
+    cell_b4.data_type = TYPE_STRING
+    
+    cell_c4 = config_sheet['C4']
+    cell_c4.value = '0:03'   # slower in min:sec
+    cell_c4.data_type = TYPE_STRING
+    
     config_sheet['D4'] = 5        # hr_up
     config_sheet['E4'] = 5        # hr_down
     config_sheet['F4'] = 10       # power_up in Watt
@@ -1807,13 +1957,11 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     config_sheet['A6'] = 'preferred_days'
     config_sheet['B6'] = '[1, 3, 5]'  # Martedì, Giovedì, Sabato
     
-    # Imposta il tipo di sport principale basato sul parametro
-    config_sheet['A7'] = 'sport_type'
-    config_sheet['B7'] = sport_type
+    # Rimuoviamo sport_type poiché non utilizzato altrove
     
     # Format header
     header_fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
-    for col in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:  # Aggiungiamo F e G
+    for col in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:  # Includiamo tutte le colonne
         config_sheet[f'{col}1'].font = Font(bold=True)
         config_sheet[f'{col}1'].fill = header_fill
     
@@ -1831,19 +1979,29 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
     hr_sheet['B2'] = 180  # Use an integer instead of a string
     
     hr_sheet['A3'] = 'Z1_HR'
-    hr_sheet['B3'] = '62-76% max_hr'
+    cell_b3 = hr_sheet['B3']
+    cell_b3.value = '62-76% max_hr'
+    cell_b3.data_type = TYPE_STRING  # Force text format
     
     hr_sheet['A4'] = 'Z2_HR'
-    hr_sheet['B4'] = '76-85% max_hr'
+    cell_b4 = hr_sheet['B4']
+    cell_b4.value = '76-85% max_hr'
+    cell_b4.data_type = TYPE_STRING
     
     hr_sheet['A5'] = 'Z3_HR'
-    hr_sheet['B5'] = '85-91% max_hr'
+    cell_b5 = hr_sheet['B5']
+    cell_b5.value = '85-91% max_hr'
+    cell_b5.data_type = TYPE_STRING
     
     hr_sheet['A6'] = 'Z4_HR'
-    hr_sheet['B6'] = '91-95% max_hr'
+    cell_b6 = hr_sheet['B6']
+    cell_b6.value = '91-95% max_hr'
+    cell_b6.data_type = TYPE_STRING
     
     hr_sheet['A7'] = 'Z5_HR'
-    hr_sheet['B7'] = '95-100% max_hr'
+    cell_b7 = hr_sheet['B7']
+    cell_b7.value = '95-100% max_hr'
+    cell_b7.data_type = TYPE_STRING
     
     # Format header
     for col in ['A', 'B']:
@@ -1952,7 +2110,11 @@ def create_sample_excel(output_file='sample_training_plan.xlsx', sport_type="run
         workouts_sheet[f'C{i}'] = session
         workouts_sheet[f'D{i}'] = sport_display  # Sport column
         workouts_sheet[f'E{i}'] = description
-        workouts_sheet[f'F{i}'] = steps
+        
+        # Set steps as string type to prevent automatic time format conversion
+        cell = workouts_sheet[f'F{i}']
+        cell.value = steps
+        cell.data_type = TYPE_STRING
         
         # Apply background color and border to all cells in the row
         for col in ['A', 'B', 'C', 'D', 'E', 'F']:
@@ -2014,6 +2176,7 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
         Il foglio Paces creato
     """
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.cell.cell import TYPE_STRING
     
     # Crea o ottieni il foglio Paces
     if 'Paces' in workbook.sheetnames:
@@ -2084,10 +2247,11 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     for name, value, note in running_paces:
         paces_sheet[f'A{row}'] = name
         
-        # Imposta il valore e applica il formato corretto
+        # IMPORTANTE: Imposta il valore come stringa e definisci esplicitamente il tipo di dati come stringa (TYPE_STRING)
+        # Questo impedisce a Excel di convertire automaticamente in formato orario
         cell = paces_sheet[f'B{row}']
-        cell.value = format_pace_for_excel(value)
-        cell.number_format = 'General'  # Usa formato generale invece di orario
+        cell.value = value
+        cell.data_type = TYPE_STRING
         
         paces_sheet[f'C{row}'] = note
         
@@ -2131,7 +2295,12 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     # Aggiungi valori di potenza per il ciclismo
     for name, value, note in cycling_power:
         paces_sheet[f'A{row}'] = name
-        paces_sheet[f'B{row}'] = value
+        
+        # Imposta il valore come stringa
+        cell = paces_sheet[f'B{row}']
+        cell.value = value
+        cell.data_type = TYPE_STRING
+        
         paces_sheet[f'C{row}'] = note
         
         # Applica bordi e formattazione a tutte le celle della riga
@@ -2173,10 +2342,10 @@ def create_unified_paces_sheet(workbook, sport_type="running"):
     for name, value, note in swimming_paces:
         paces_sheet[f'A{row}'] = name
         
-        # Imposta il valore e applica il formato corretto
+        # Imposta il valore come stringa
         cell = paces_sheet[f'B{row}']
-        cell.value = format_pace_for_excel(value)
-        cell.number_format = 'General'  # Usa formato generale invece di orario
+        cell.value = value
+        cell.data_type = TYPE_STRING
         
         paces_sheet[f'C{row}'] = note
         
@@ -2700,12 +2869,13 @@ def safe_adjust_column_widths(worksheet):
             adjusted_width = max(max_length + 2, 8)  # Add some extra space
             worksheet.column_dimensions[column].width = min(adjusted_width, 60)  # Limit to 60 to avoid too wide columns
 
+
 def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     """
     Converte un file Excel strutturato in un file YAML compatibile con garmin-planner.
     Include supporto per estrarre le date degli allenamenti e la data della gara.
     Ora estrae sia paces che power_values e swim_paces indipendentemente dal tipo di sport.
-    Mantiene i valori di ritmo, potenza e passi vasca solo nel foglio Paces senza duplicarli in Config.
+    Utilizza estrazione diretta per le frequenze cardiache.
     
     Args:
         excel_file: Percorso del file Excel di input
@@ -2758,12 +2928,11 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     # Dizionario che conterrà il piano completo
     plan = {
         'config': {
-            'heart_rates': {},
             'margins': {
                 'faster': '0:03',
                 'slower': '0:03',
-                'power_up': 10,       # Margine superiore per potenza in Watt
-                'power_down': 10,     # Margine inferiore per potenza in Watt
+                'power_up': 10,
+                'power_down': 10,
                 'hr_up': 5,
                 'hr_down': 5
             },
@@ -2835,13 +3004,13 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     except Exception as e:
         print(f"Errore nell'estrazione della data della gara: {str(e)}")
     
-    # Estrai le informazioni di configurazione
+    # Estrai le informazioni di configurazione dal foglio Config
     if 'Config' in xls.sheet_names:
-        config_df = pd.read_excel(xls, 'Config', header=0)
+        config_df = pd.read_excel(excel_file, sheet_name='Config')
         
         # Estrai il prefisso del nome (se presente)
         name_prefix_rows = config_df[config_df.iloc[:, 0] == 'name_prefix']
-        if not name_prefix_rows.empty:
+        if not name_prefix_rows.empty and pd.notna(name_prefix_rows.iloc[0, 1]):
             # Assicurati che il prefisso termini con uno spazio
             prefix = str(name_prefix_rows.iloc[0, 1]).strip()
             # Aggiungi uno spazio alla fine se non c'è già
@@ -2857,22 +3026,33 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
                 plan['config']['margins']['faster'] = str(margins_rows.iloc[0, 1]).strip()
             if pd.notna(margins_rows.iloc[0, 2]):
                 plan['config']['margins']['slower'] = str(margins_rows.iloc[0, 2]).strip()
-            if pd.notna(margins_rows.iloc[0, 3]):
-                plan['config']['margins']['hr_up'] = int(margins_rows.iloc[0, 3])
-            if pd.notna(margins_rows.iloc[0, 4]):
-                plan['config']['margins']['hr_down'] = int(margins_rows.iloc[0, 4])
+            if pd.notna(margins_rows.iloc[0, 3]) and not pd.isna(margins_rows.iloc[0, 3]):
+                try:
+                    plan['config']['margins']['hr_up'] = int(margins_rows.iloc[0, 3])
+                except (ValueError, TypeError):
+                    print(f"Valore hr_up non valido: {margins_rows.iloc[0, 3]}")
+            if pd.notna(margins_rows.iloc[0, 4]) and not pd.isna(margins_rows.iloc[0, 4]):
+                try:
+                    plan['config']['margins']['hr_down'] = int(margins_rows.iloc[0, 4])
+                except (ValueError, TypeError):
+                    print(f"Valore hr_down non valido: {margins_rows.iloc[0, 4]}")
+            # Aggiungi anche power_up e power_down se presenti
+            if pd.notna(margins_rows.iloc[0, 5]) and not pd.isna(margins_rows.iloc[0, 5]):
+                try:
+                    plan['config']['margins']['power_up'] = int(margins_rows.iloc[0, 5])
+                except (ValueError, TypeError):
+                    print(f"Valore power_up non valido: {margins_rows.iloc[0, 5]}")
+            if pd.notna(margins_rows.iloc[0, 6]) and not pd.isna(margins_rows.iloc[0, 6]):
+                try:
+                    plan['config']['margins']['power_down'] = int(margins_rows.iloc[0, 6])
+                except (ValueError, TypeError):
+                    print(f"Valore power_down non valido: {margins_rows.iloc[0, 6]}")
         
         # Estrai preferred_days se presente
         preferred_days_rows = config_df[config_df.iloc[:, 0] == 'preferred_days']
         if not preferred_days_rows.empty and pd.notna(preferred_days_rows.iloc[0, 1]):
             preferred_days_value = str(preferred_days_rows.iloc[0, 1]).strip()
             plan['config']['preferred_days'] = preferred_days_value
-        
-        # Estrai sport_type se presente
-        sport_type_rows = config_df[config_df.iloc[:, 0] == 'sport_type']
-        if not sport_type_rows.empty and pd.notna(sport_type_rows.iloc[0, 1]):
-            sport_type_value = str(sport_type_rows.iloc[0, 1]).strip()
-            plan['config']['sport_type'] = sport_type_value
         
         # Estrai athlete_name se presente
         athlete_name_rows = config_df[config_df.iloc[:, 0] == 'athlete_name']
@@ -2889,19 +3069,28 @@ def excel_to_yaml(excel_file, output_file=None, sport_type=None):
     elif 'athlete_name' in plan['config']:
         plan['athlete_name'] = plan['config']['athlete_name']
     
-    # NUOVA IMPLEMENTAZIONE: Utilizzare il parser migliorato per estrarre ritmi, potenza, passi vasca e frequenze cardiache
-    if 'Paces' in xls.sheet_names or 'HeartRates' in xls.sheet_names:
-        paces, swim_paces, power_values, heart_rates = extract_paces_and_speeds_from_excel(excel_file)
-        
-        # Aggiungi direttamente al piano (non dentro config) SOLO se contengono valori
-        if paces:
-            plan['paces'] = paces
-        if swim_paces:
-            plan['swim_paces'] = swim_paces
-        if power_values:
-            plan['power_values'] = power_values
-        if heart_rates:
-            plan['config']['heart_rates'] = heart_rates
+    # MODIFICATO: Utilizziamo la nuova funzione di estrazione diretta per le frequenze cardiache
+    heart_rates = extract_heart_rates_from_excel(excel_file)
+    
+    # Aggiungi le frequenze cardiache estratte, se presenti
+    if heart_rates:
+        plan['config']['heart_rates'] = heart_rates
+        print(f"Frequenze cardiache estratte con successo: {heart_rates}")
+    else:
+        # Imposta un dizionario vuoto anche se non abbiamo trovato frequenze cardiache
+        plan['config']['heart_rates'] = {}
+        print("Nessuna frequenza cardiaca trovata o errore durante l'estrazione")
+    
+    # Estrai ritmi, velocità e passi vasca
+    paces, swim_paces, power_values, _ = extract_paces_and_speeds_from_excel(excel_file)
+    
+    # Aggiungi direttamente al piano (non dentro config) SOLO se contengono valori
+    if paces:
+        plan['paces'] = paces
+    if swim_paces:
+        plan['swim_paces'] = swim_paces
+    if power_values:
+        plan['power_values'] = power_values
     
     # Dictionary to store workout descriptions for comments
     workout_descriptions = {}

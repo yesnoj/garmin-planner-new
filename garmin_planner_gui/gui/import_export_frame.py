@@ -159,18 +159,18 @@ class ImportExportFrame(ttk.Frame):
                   command=self.copy_log_to_clipboard).pack(side=tk.LEFT, padx=5)
 
 
-
     def prepare_data_for_yaml_export(self, data):  # Assicurati che ci sia il parametro 'data'
         """
         Prepara i dati per l'esportazione in YAML, normalizzando i ritmi e altri valori.
         
         Args:
             data: Dizionario con i dati da esportare
-            
+                
         Returns:
             Dizionario con i dati normalizzati
         """
         import copy
+        from planner.excel_to_yaml_converter import normalize_pace_format
         
         # Crea una copia per non modificare l'originale
         normalized_data = copy.deepcopy(data)
@@ -185,17 +185,18 @@ class ImportExportFrame(ttk.Frame):
             for name, value in normalized_data['swim_paces'].items():
                 normalized_data['swim_paces'][name] = normalize_pace_format(value)
         
-        # Controlla anche se ci sono ritmi nella configurazione
+        # Normalizza i ritmi nella configurazione
         if 'config' in normalized_data and 'paces' in normalized_data['config']:
             for name, value in normalized_data['config']['paces'].items():
                 normalized_data['config']['paces'][name] = normalize_pace_format(value)
         
-        # Controlla anche se ci sono passi vasca nella configurazione
+        # Normalizza i passi vasca nella configurazione
         if 'config' in normalized_data and 'swim_paces' in normalized_data['config']:
             for name, value in normalized_data['config']['swim_paces'].items():
                 normalized_data['config']['swim_paces'][name] = normalize_pace_format(value)
         
         return normalized_data
+
 
     def create_yaml_import_tab(self, parent):
         """Crea la scheda per l'importazione da file YAML/JSON"""
@@ -916,6 +917,8 @@ class ImportExportFrame(ttk.Frame):
     def import_from_file(self):
         """Importa allenamenti da un file (YAML o Excel)"""
         import os  # Reimportiamo os all'interno della funzione per assicurarci che sia disponibile
+        import openpyxl  # Per leggere direttamente Excel
+        from planner.excel_to_yaml_converter import normalize_pace_format
         
         # Ottieni il nome del file
         filename = self.import_file_var.get().strip()
@@ -942,6 +945,52 @@ class ImportExportFrame(ttk.Frame):
             # Determina il tipo di file
             ext = os.path.splitext(filename.lower())[1]
             
+            # Variabile per gestire il caso speciale delle frequenze cardiache
+            heart_rates = {}
+            
+            # Se è un file Excel, estrai direttamente le frequenze cardiache
+            if ext == '.xlsx':
+                try:
+                    # Carica il workbook
+                    wb = openpyxl.load_workbook(filename, data_only=True)
+                    
+                    # Verifica se esiste il foglio HeartRates
+                    if 'HeartRates' in wb.sheetnames:
+                        # Estrai le frequenze cardiache
+                        hr_sheet = wb['HeartRates']
+                        
+                        # Stampa info sul foglio
+                        self.write_log(f"Foglio HeartRates trovato: {hr_sheet.dimensions}, righe: {hr_sheet.max_row}")
+                        
+                        # Processa riga per riga, saltando l'intestazione
+                        for row in range(2, hr_sheet.max_row + 1):
+                            # Ottieni il nome e il valore
+                            name = hr_sheet.cell(row=row, column=1).value
+                            value = hr_sheet.cell(row=row, column=2).value
+                            
+                            # Verifica che entrambi non siano None
+                            if name is not None and value is not None:
+                                # Gestisci i vari tipi di valore
+                                name_str = str(name).strip()
+                                
+                                if isinstance(value, (int, float)):
+                                    heart_rates[name_str] = int(value)
+                                else:
+                                    heart_rates[name_str] = str(value).strip()
+                                
+                                self.write_log(f"Estratta frequenza cardiaca: {name_str} = {heart_rates[name_str]}")
+                        
+                        # Verifica se sono state estratte frequenze cardiache
+                        if heart_rates:
+                            self.write_log(f"Estratte {len(heart_rates)} frequenze cardiache dal foglio HeartRates")
+                        else:
+                            self.write_log("Nessuna frequenza cardiaca trovata nel foglio HeartRates")
+                except Exception as e:
+                    self.write_log(f"Errore nell'estrazione diretta delle frequenze cardiache: {str(e)}")
+                    import traceback
+                    self.write_log(traceback.format_exc())
+            
+            # Ora procedi con la normale importazione
             if ext in ['.yaml', '.yml']:
                 # Importa da YAML
                 with open(filename, 'r', encoding='utf-8') as f:
@@ -971,6 +1020,16 @@ class ImportExportFrame(ttk.Frame):
                     pass
                     
                 self.write_log("File Excel caricato e convertito")
+                
+                # Gestione speciale per le frequenze cardiache da Excel
+                if heart_rates:
+                    # Assicurati che config esista
+                    if 'config' not in data:
+                        data['config'] = {}
+                        
+                    # Inserisci le frequenze cardiache estratte direttamente
+                    data['config']['heart_rates'] = heart_rates
+                    self.write_log(f"Aggiunte manualmente {len(heart_rates)} frequenze cardiache")
             else:
                 # Prova come YAML per altri formati
                 try:
@@ -985,7 +1044,7 @@ class ImportExportFrame(ttk.Frame):
                     return
             
             # Lista delle chiavi speciali che non sono allenamenti
-            config_keys = ['config', 'athlete_name', 'paces', 'power_values', 'swim_paces', 'heart_rates']
+            config_keys = ['config', 'athlete_name', 'paces', 'power_values', 'swim_paces', 'heart_rates', 'speeds']
             
             # Estrai la configurazione se presente
             if 'config' in data:
@@ -993,11 +1052,22 @@ class ImportExportFrame(ttk.Frame):
                 new_config = data.pop('config')
                 
                 # Aggiorna in modo sicuro (senza sovrascrivere tutto)
-                if not 'workout_config' in self.controller.config:
+                if 'workout_config' not in self.controller.config:
                     self.controller.config['workout_config'] = {}
                 
                 # Aggiorna le varie sezioni
-                for section in ['paces', 'speeds', 'swim_paces', 'power_values', 'margins']:
+                for section in ['margins', 'name_prefix', 'sport_type', 'preferred_days']:
+                    if section in new_config:
+                        self.controller.config['workout_config'][section] = new_config[section]
+                
+                # Sezioni che potrebbero essere sia in config che a livello root
+                # Priorità: prima prendi dal root, poi da config
+                for section in ['paces', 'speeds', 'swim_paces', 'power_values']:
+                    # Se la sezione è già stata aggiornata dal livello root,
+                    # non sovrascriverla con quella da config
+                    if section in data:
+                        continue
+                        
                     if section in new_config:
                         # Sostituzione completa invece di aggiornamento per evitare valori predefiniti
                         self.controller.config['workout_config'][section] = new_config[section]
@@ -1010,9 +1080,9 @@ class ImportExportFrame(ttk.Frame):
                 # Assicurati di estrarre e applicare le frequenze cardiache
                 if 'heart_rates' in new_config:
                     self.controller.config['workout_config']['heart_rates'] = new_config['heart_rates']
-                    self.write_log(f"Frequenze cardiache aggiornate dalla configurazione")
+                    self.write_log(f"Frequenze cardiache aggiornate dalla configurazione: {new_config['heart_rates']}")
                 # Se importiamo da Excel e le frequenze cardiache non sono presenti, le rimuoviamo dalla configurazione
-                elif ext == '.xlsx' and 'heart_rates' in self.controller.config['workout_config']:
+                elif ext == '.xlsx' and 'heart_rates' in self.controller.config['workout_config'] and not heart_rates:
                     del self.controller.config['workout_config']['heart_rates']
                     self.write_log(f"Frequenze cardiache rimosse perché non presenti nel file importato")
                 
@@ -1038,9 +1108,18 @@ class ImportExportFrame(ttk.Frame):
             for config_section in ['paces', 'power_values', 'swim_paces', 'speeds', 'heart_rates']:
                 if config_section in data:
                     section_data = data.pop(config_section)
+                    
+                    # Normalizza i valori di paces e swim_paces
+                    if config_section in ['paces', 'swim_paces']:
+                        normalized_data = {}
+                        for name, value in section_data.items():
+                            normalized_data[name] = normalize_pace_format(value)
+                        section_data = normalized_data
+                    
                     # Assicurati che workout_config esista
                     if 'workout_config' not in self.controller.config:
                         self.controller.config['workout_config'] = {}
+                    
                     # Sovrascrive la sezione invece di aggiornare
                     self.controller.config['workout_config'][config_section] = section_data
                     self.write_log(f"Sezione {config_section} aggiornata dalla radice del file")
@@ -1049,8 +1128,21 @@ class ImportExportFrame(ttk.Frame):
                 elif ext == '.xlsx' and 'workout_config' in self.controller.config and config_section in self.controller.config['workout_config']:
                     # Verifica se non è presente nemmeno nella configurazione
                     if 'config' not in data or config_section not in data['config']:
-                        del self.controller.config['workout_config'][config_section]
-                        self.write_log(f"Sezione {config_section} rimossa perché non presente nel file importato")
+                        # NON rimuovere le frequenze cardiache se le abbiamo estratte direttamente
+                        if config_section == 'heart_rates' and heart_rates:
+                            # Invece, aggiorna con le frequenze cardiache estratte direttamente
+                            self.controller.config['workout_config']['heart_rates'] = heart_rates
+                            self.write_log(f"Aggiornate frequenze cardiache con quelle estratte direttamente")
+                        else:
+                            del self.controller.config['workout_config'][config_section]
+                            self.write_log(f"Sezione {config_section} rimossa perché non presente nel file importato")
+            
+            # Gestione speciale per le frequenze cardiache estratte direttamente
+            if ext == '.xlsx' and heart_rates:
+                if 'workout_config' not in self.controller.config:
+                    self.controller.config['workout_config'] = {}
+                self.controller.config['workout_config']['heart_rates'] = heart_rates
+                self.write_log(f"Frequenze cardiache aggiunte con estrazione diretta: {heart_rates}")
             
             # Conta gli allenamenti
             total_workouts = sum(1 for name in data.keys() if name not in config_keys)
