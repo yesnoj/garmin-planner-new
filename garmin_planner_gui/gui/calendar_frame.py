@@ -174,19 +174,18 @@ class CalendarFrame(ttk.Frame):
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Crea il treeview
-        columns = ("name", "sport", "date")
+        columns = ("name", "sport")  # Rimossa "date"
         self.workouts_tree = ttk.Treeview(list_frame, columns=columns, show="headings", 
                                         selectmode="extended")
-        
+
         # Intestazioni
         self.workouts_tree.heading("name", text="Nome")
         self.workouts_tree.heading("sport", text="Sport")
-        self.workouts_tree.heading("date", text="Data")
-        
+        # Rimossa l'intestazione "date"
+
         # Larghezze colonne
         self.workouts_tree.column("name", width=400)
         self.workouts_tree.column("sport", width=100)
-        self.workouts_tree.column("date", width=100)
         
         # Scrollbar
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.workouts_tree.yview)
@@ -1362,20 +1361,11 @@ class CalendarFrame(ttk.Frame):
             sport_type = workout.get('sportType', {}).get('sportTypeKey', 'running')
             sport_display = sport_type.capitalize()
             
-            # Ottieni la data di creazione
-            created_date = workout.get('createdDate', '')
-            if created_date:
-                try:
-                    # Convert timestamp to date
-                    created_date = datetime.datetime.fromtimestamp(created_date / 1000.0).strftime('%Y-%m-%d')
-                except:
-                    created_date = ""
-            
-            # Aggiungi alla lista con l'ID come tag
+            # Aggiungi alla lista con l'ID come tag (senza la data)
             self.workouts_tree.insert("", "end", 
-                                     values=(name, sport_display, created_date), 
-                                     tags=(workout.get('workoutId'),))
-    
+                                   values=(name, sport_display), 
+                                   tags=(workout.get('workoutId'),))
+        
     def refresh_workouts(self):
         """Aggiorna la lista degli allenamenti disponibili"""
         if self.garmin_client:
