@@ -922,7 +922,264 @@ def format_steps_for_excel(steps, sport_type="running"):
 
 
 
-
+def create_unified_examples_sheet(workbook):
+    """
+    Crea un foglio Examples unificato che contiene esempi per corsa, ciclismo e nuoto.
+    
+    Args:
+        workbook: Workbook di openpyxl
+        
+    Returns:
+        Il foglio Examples creato
+    """
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    
+    # Crea o ottieni il foglio Examples
+    if 'Examples' in workbook.sheetnames:
+        examples_sheet = workbook['Examples']
+        # Pulisci il foglio esistente
+        for row in range(examples_sheet.max_row, 0, -1):
+            examples_sheet.delete_rows(row)
+    else:
+        examples_sheet = workbook.create_sheet(title='Examples')
+    
+    # Definisci stili
+    header_font = Font(bold=True)
+    subheader_font = Font(bold=True, size=12)
+    wrapped_alignment = Alignment(wrap_text=True, vertical='top')
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    header_fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
+    running_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")  # Verde chiaro
+    cycling_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")  # Azzurro chiaro
+    swimming_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")  # Arancione chiaro
+    alternate_fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
+    
+    # Imposta le intestazioni di colonna
+    examples_sheet['A1'] = 'Tipo di Esempio'
+    examples_sheet['B1'] = 'Descrizione'
+    examples_sheet['C1'] = 'Passi (Steps)'
+    
+    # Formatta le intestazioni
+    for col in ['A', 'B', 'C']:
+        cell = examples_sheet[f'{col}1']
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = thin_border
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    
+    # Imposta larghezze colonne
+    examples_sheet.column_dimensions['A'].width = 20
+    examples_sheet.column_dimensions['B'].width = 40
+    examples_sheet.column_dimensions['C'].width = 60
+    
+    # Riga 2: Nota informativa
+    examples_sheet.merge_cells('A2:C2')
+    examples_sheet['A2'] = '# ESEMPI DI SINTASSI - questo foglio è solo per scopo informativo e non viene importato'
+    examples_sheet['A2'].font = Font(italic=True)
+    examples_sheet['A2'].alignment = wrapped_alignment
+    
+    # Sezione Running
+    row = 3
+    examples_sheet.merge_cells(f'A{row}:C{row}')
+    examples_sheet[f'A{row}'] = 'ESEMPI PER LA CORSA (RUNNING)'
+    examples_sheet[f'A{row}'].font = subheader_font
+    examples_sheet[f'A{row}'].fill = running_fill
+    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+    row += 1
+    
+    # Esempi per la corsa
+    running_examples = [
+        # Distanza
+        ('Distanza', 'Esempio di allenamento basato su distanza', 
+         "warmup: 2km @Z1_HR\ninterval: 5km @Z3\ncooldown: 1km @Z1_HR"),
+        
+        # Tempo
+        ('Tempo', 'Esempio di allenamento basato su tempo', 
+         "warmup: 10min @Z1_HR\ninterval: 30min @Z2\ncooldown: 5min @Z1_HR"),
+        
+        # Ripetute semplici
+        ('Ripetute semplici', 'Esempio di allenamento con ripetute', 
+         "warmup: 10min @Z1_HR\nrepeat 5:\n  interval: 1km @Z4\n  recovery: 2min @Z1_HR\ncooldown: 10min @Z1_HR"),
+        
+        # Con descrizioni
+        ('Con descrizioni', 'Esempio con descrizioni per ogni passo', 
+         "warmup: 10min @Z1_HR -- Inizia lentamente\ninterval: 20min @Z3 -- Mantieni ritmo costante\ncooldown: 5min @Z1_HR -- Rallenta gradualmente"),
+        
+        # Pulsante lap
+        ('Pulsante lap', 'Esempio con pulsante lap', 
+         "warmup: 10min @Z1_HR\nrest: lap-button @Z1_HR -- Premi lap quando sei pronto\ninterval: 5km @Z3\ncooldown: 5min @Z1_HR"),
+        
+        # Zone personalizzate
+        ('Zone personalizzate', 'Esempio con zone personalizzate', 
+         "warmup: 10min @Z1_HR\ninterval: 20min @marathon\ninterval: 10min @threshold\ncooldown: 5min @Z1_HR")
+    ]
+    
+    # Aggiungi esempi per la corsa
+    for i, (tipo, descrizione, passi) in enumerate(running_examples):
+        examples_sheet[f'A{row}'] = tipo
+        examples_sheet[f'B{row}'] = descrizione
+        examples_sheet[f'C{row}'] = passi
+        
+        # Applica bordi e formattazione a tutte le celle della riga
+        for col in ['A', 'B', 'C']:
+            cell = examples_sheet[f'{col}{row}']
+            cell.border = thin_border
+            cell.alignment = wrapped_alignment
+            
+            # Applica un colore di sfondo alternato per migliorare la leggibilità
+            if i % 2 == 0:
+                cell.fill = alternate_fill
+        
+        row += 1
+    
+    # Aggiungi una riga vuota tra le sezioni
+    row += 1
+    
+    # Sezione Cycling
+    examples_sheet.merge_cells(f'A{row}:C{row}')
+    examples_sheet[f'A{row}'] = 'ESEMPI PER IL CICLISMO (CYCLING)'
+    examples_sheet[f'A{row}'].font = subheader_font
+    examples_sheet[f'A{row}'].fill = cycling_fill
+    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+    row += 1
+    
+    # Esempi per il ciclismo
+    cycling_examples = [
+        # Potenza - Zone
+        ('Potenza (Zone)', 'Allenamento basato su zone di potenza', 
+         "warmup: 15min @hr Z1_HR\ninterval: 40min @pwr Z3\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - Percentuale FTP
+        ('Potenza (% FTP)', 'Allenamento basato su percentuali FTP', 
+         "warmup: 15min @hr Z1_HR\ninterval: 20min @pwr 90%\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - Sweet Spot
+        ('Sweet Spot', 'Allenamento Sweet Spot (88-94% FTP)', 
+         "warmup: 15min @hr Z1_HR\nrepeat 3:\n  interval: 12min @pwr sweet_spot\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - Ripetute
+        ('Ripetute potenza', 'Ripetute ad alta intensità', 
+         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr Z5\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - VO2max
+        ('VO2max', 'Allenamento VO2max', 
+         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr 110-120%\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - Neuromuscolare
+        ('Neuromuscolare', 'Allenamento potenza neuromuscolare', 
+         "warmup: 15min @hr Z1_HR\nrepeat 10:\n  interval: 30sec @pwr Z6\n  recovery: 4min30sec @hr Z1_HR\ncooldown: 10min @hr Z1_HR")
+    ]
+    
+    # Aggiungi esempi per il ciclismo
+    for i, (tipo, descrizione, passi) in enumerate(cycling_examples):
+        examples_sheet[f'A{row}'] = tipo
+        examples_sheet[f'B{row}'] = descrizione
+        examples_sheet[f'C{row}'] = passi
+        
+        # Applica bordi e formattazione a tutte le celle della riga
+        for col in ['A', 'B', 'C']:
+            cell = examples_sheet[f'{col}{row}']
+            cell.border = thin_border
+            cell.alignment = wrapped_alignment
+            
+            # Applica un colore di sfondo alternato per migliorare la leggibilità
+            if i % 2 == 0:
+                cell.fill = alternate_fill
+        
+        row += 1
+    
+    # Aggiungi una riga vuota tra le sezioni
+    row += 1
+    
+    # Sezione Swimming (NUOVA)
+    examples_sheet.merge_cells(f'A{row}:C{row}')
+    examples_sheet[f'A{row}'] = 'ESEMPI PER IL NUOTO (SWIMMING)'
+    examples_sheet[f'A{row}'].font = subheader_font
+    examples_sheet[f'A{row}'].fill = swimming_fill
+    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+    row += 1
+    
+    # Esempi per il nuoto
+    swimming_examples = [
+        # Distanza
+        ('Distanza', 'Esempio di allenamento basato su distanza', 
+         "warmup: 200m @Z1_HR\ninterval: 800m @Z3\ncooldown: 100m @Z1_HR"),
+        
+        # Tempo
+        ('Tempo', 'Esempio di allenamento basato su tempo', 
+         "warmup: 5min @Z1_HR\ninterval: 20min @Z2\ncooldown: 5min @Z1_HR"),
+        
+        # Ripetute semplici
+        ('Ripetute semplici', 'Esempio di allenamento con ripetute', 
+         "warmup: 200m @Z1_HR\nrepeat 5:\n  interval: 100m @Z4\n  recovery: 30s @Z1_HR\ncooldown: 100m @Z1_HR"),
+        
+        # Ripetute con tecniche diverse
+        ('Tecniche diverse', 'Esempio di allenamento con diverse tecniche di nuoto', 
+         "warmup: 200m @Z1_HR\nrepeat 4:\n  interval: 50m @Z3 -- Stile libero\n  interval: 50m @Z2 -- Dorso\n  recovery: 20s @Z1_HR\ncooldown: 100m @Z1_HR"),
+        
+        # Con descrizioni
+        ('Con descrizioni', 'Esempio con descrizioni per ogni passo', 
+         "warmup: 200m @Z1_HR -- Stile libero lento\ninterval: 400m @Z3 -- Alternare stile ogni 100m\ncooldown: 100m @Z1_HR -- Dorso rilassato"),
+        
+        # Zone personalizzate
+        ('Zone personalizzate', 'Esempio con zone personalizzate', 
+         "warmup: 200m @Z1_HR\ninterval: 400m @threshold\nrepeat 4:\n  interval: 50m @sprint\n  recovery: 50m @recovery\ncooldown: 100m @Z1_HR")
+    ]
+    
+    # Aggiungi esempi per il nuoto
+    for i, (tipo, descrizione, passi) in enumerate(swimming_examples):
+        examples_sheet[f'A{row}'] = tipo
+        examples_sheet[f'B{row}'] = descrizione
+        examples_sheet[f'C{row}'] = passi
+        
+        # Applica bordi e formattazione a tutte le celle della riga
+        for col in ['A', 'B', 'C']:
+            cell = examples_sheet[f'{col}{row}']
+            cell.border = thin_border
+            cell.alignment = wrapped_alignment
+            
+            # Applica un colore di sfondo alternato per migliorare la leggibilità
+            if i % 2 == 0:
+                cell.fill = alternate_fill
+        
+        row += 1
+    
+    # Aggiungi una riga vuota prima delle note sulla sintassi
+    row += 1
+    
+    # Aggiungi note sulla sintassi generali
+    examples_sheet.merge_cells(f'A{row}:C{row}')
+    examples_sheet[f'A{row}'] = '# SINTASSI SUPPORTATA NEGLI STEP'
+    examples_sheet[f'A{row}'].font = Font(italic=True, bold=True)
+    examples_sheet[f'A{row}'].alignment = wrapped_alignment
+    row += 1
+    
+    # Regole di sintassi comuni
+    syntax_rules = [
+        "Tipi di passo: warmup, interval, recovery, cooldown, rest, repeat, other",
+        "Durata: tempo (s, min, h) o distanza (m, km)",
+        "Per la corsa: usa @ per il ritmo (es. @Z2) e @hr per la frequenza cardiaca (es. @hr Z2_HR)",
+        "Per il ciclismo: usa @pwr per la potenza (es. @pwr Z3 o @pwr 90%), @spd per la velocità (es. @spd Z3) e @hr per FC (es. @hr Z1_HR)",
+        "Zone ritmo: Z1-Z5 o qualsiasi zona definita nella sezione Ritmi",
+        "Zone potenza: Z1-Z6, percentuali FTP (es. 90%) o zone come sweet_spot, threshold",
+        "Zone freq. cardiaca: Z1_HR-Z5_HR o qualsiasi zona definita nel foglio HeartRates",
+        "Repeat: repeat N: seguito da step indentati con 2 spazi",
+        "Descrizioni opzionali: aggiungi -- seguito dalla descrizione alla fine del passo"
+    ]
+    
+    for rule in syntax_rules:
+        examples_sheet.merge_cells(f'A{row}:C{row}')
+        examples_sheet[f'A{row}'] = rule
+        examples_sheet[f'A{row}'].font = Font(italic=True)
+        examples_sheet[f'A{row}'].alignment = wrapped_alignment
+        row += 1
+    
+    return examples_sheet
 
 
 def update_workouts_sheet(sheet, yaml_data):
@@ -2448,11 +2705,10 @@ def create_examples_sheet(workbook, sport_type="running"):
     return examples_sheet
 
 
+
 def create_unified_examples_sheet(workbook):
     """
-    Crea un foglio Examples unificato che contiene esempi per corsa, ciclismo e nuoto.
-    Aggiunge anche esempi completi per la configurazione dei ritmi e delle frequenze cardiache
-    in tutti i formati possibili.
+    Crea un foglio Examples unificato che contiene esempi sia per la corsa, il ciclismo e il nuoto.
     
     Args:
         workbook: Workbook di openpyxl
@@ -2474,7 +2730,6 @@ def create_unified_examples_sheet(workbook):
     # Definisci stili
     header_font = Font(bold=True)
     subheader_font = Font(bold=True, size=12)
-    section_font = Font(bold=True, size=11)
     wrapped_alignment = Alignment(wrap_text=True, vertical='top')
     thin_border = Border(
         left=Side(style='thin'),
@@ -2486,9 +2741,6 @@ def create_unified_examples_sheet(workbook):
     running_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")  # Verde chiaro
     cycling_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")  # Azzurro chiaro
     swimming_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")  # Arancione chiaro
-    pace_fill = PatternFill(start_color="EBF1DE", end_color="EBF1DE", fill_type="solid")      # Verde pallido
-    hr_fill = PatternFill(start_color="FDE9D9", end_color="FDE9D9", fill_type="solid")        # Arancione pallido
-    format_fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")    # Grigio chiaro
     alternate_fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
     
     # Imposta le intestazioni di colonna
@@ -2515,757 +2767,8 @@ def create_unified_examples_sheet(workbook):
     examples_sheet['A2'].font = Font(italic=True)
     examples_sheet['A2'].alignment = wrapped_alignment
     
-    # Sezione Formati di Configurazione
-    row = 3
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'FORMATI DI CONFIGURAZIONE SUPPORTATI'
-    examples_sheet[f'A{row}'].font = subheader_font
-    examples_sheet[f'A{row}'].fill = format_fill
-    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-    row += 1
-    
-    format_examples = [
-        # Nome, Descrizione, Esempi
-        ('Ritmi (mm:ss)', 'Minuti e secondi per chilometro, separati da due punti', 
-         "Esempi: '5:00' (5 minuti), '4:30' (4 minuti e 30 secondi), '10:15' (10 minuti e 15 secondi)"),
-        
-        ('Intervalli di ritmo', 'Range di ritmi indicato con un trattino', 
-         "Esempi: '4:50-5:10' (da 4:50 a 5:10 min/km), '4:00-4:15' (da 4:00 a 4:15 min/km)"),
-        
-        ('Secondi totali', 'Ritmi indicati come secondi totali per km', 
-         "Esempi: '300' (equivalente a 5:00 min/km), '270' (equivalente a 4:30 min/km)"),
-         
-        ('Velocità (km/h)', 'Velocità in km/h, con o senza decimali', 
-         "Esempi: '12.0' (12 km/h), '14.5' (14.5 km/h), '30' (30 km/h)"),
-         
-        ('Intervalli di velocità', 'Range di velocità indicato con un trattino', 
-         "Esempi: '10.0-12.0' (da 10 a 12 km/h), '28-32' (da 28 a 32 km/h)"),
-         
-        ('Potenza (Watt)', 'Potenza in watt, come valore intero', 
-         "Esempi: '250' (250 watt), '300' (300 watt)"),
-         
-        ('Intervalli di potenza', 'Range di potenza indicato con un trattino', 
-         "Esempi: '230-270' (da 230 a 270 watt), '300-350' (da 300 a 350 watt)"),
-         
-        ('Percentuale FTP', 'Potenza espressa come percentuale dell\'FTP', 
-         "Esempi: '90%' (90% dell'FTP), '75%' (75% dell'FTP)"),
-         
-        ('Intervallo percentuale FTP', 'Range di potenza come percentuale dell\'FTP', 
-         "Esempi: '75-85%' (dal 75% all'85% dell'FTP), '105-115%' (dal 105% al 115% dell'FTP)"),
-         
-        ('Percentuale ritmo soglia', 'Ritmo espresso come percentuale del ritmo soglia (threshold)', 
-         "Esempi: '90% threshold' (90% del ritmo di soglia), '105% threshold' (5% più veloce del ritmo di soglia)"),
-         
-        ('Intervallo percentuale ritmo', 'Range di ritmo come percentuale del ritmo soglia', 
-         "Esempi: '95-100% threshold' (dal 95% al 100% del ritmo di soglia), '105-110% threshold' (dal 5% al 10% più veloce)"),
-         
-        ('Frequenza cardiaca (bpm)', 'Frequenza cardiaca in battiti al minuto', 
-         "Esempi: '150' (150 bpm), '165' (165 bpm)"),
-         
-        ('Intervallo FC (bpm)', 'Range di frequenza cardiaca in bpm', 
-         "Esempi: '140-160' (da 140 a 160 bpm), '160-170' (da 160 a 170 bpm)"),
-         
-        ('Percentuale FC max', 'Frequenza cardiaca come percentuale della FC massima', 
-         "Esempi: '80%' (80% della FC max), '90%' (90% della FC max)"),
-         
-        ('Intervallo percentuale FC', 'Range di FC come percentuale della FC massima', 
-         "Esempi: '70-80%' (dal 70% all'80% della FC max), '85-95%' (dall'85% al 95% della FC max)"),
-         
-        ('Formati con operatori', 'Usando < (minore di) o > (maggiore di)', 
-         "Esempi: '<125' (sotto 125 watt/bpm), '>90%' (sopra il 90% FC max/FTP), '>=170' (maggiore o uguale a 170 bpm)")
-    ]
-    
-    # Aggiungi esempi di formati
-    for i, (nome, descrizione, esempi) in enumerate(format_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = descrizione
-        examples_sheet[f'C{row}'] = esempi
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # Aggiungi una riga vuota tra le sezioni
-    row += 1
-    
-    # Sezione Configurazione Ritmi Corsa
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'CONFIGURAZIONE RITMI PER LA CORSA'
-    examples_sheet[f'A{row}'].font = subheader_font
-    examples_sheet[f'A{row}'].fill = pace_fill
-    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-    row += 1
-    
-    # SubHeader: Ritmi base
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Zone standard di ritmo'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi per la configurazione dei ritmi della corsa
-    pace_examples = [
-        # Nome zona, Formato, Descrizione
-        ('Z1', '6:30', 'Zona 1: recupero attivo (ritmo molto facile)'),
-        ('Z2', '6:00', 'Zona 2: endurance (ritmo facile)'),
-        ('Z3', '5:30', 'Zona 3: tempo (ritmo moderato)'),
-        ('Z4', '5:00', 'Zona 4: soglia (ritmo duro)'),
-        ('Z5', '4:30', 'Zona 5: VO2max (ritmo molto duro)')
-    ]
-    
-    # Aggiungi esempi per i ritmi della corsa
-    for i, (nome, formato, descrizione) in enumerate(pace_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Ritmi personalizzati
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Ritmi personalizzati'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di ritmi personalizzati
-    pace_custom_examples = [
-        # Nome zona, Formato, Descrizione
-        ('recovery', '7:00', 'Ritmo di recupero (più lento di Z1)'),
-        ('threshold', '5:10', 'Ritmo soglia anaerobica (ritmo sostenibile per circa 1 ora)'),
-        ('marathon', '5:20', 'Ritmo maratona (ritmo che potresti sostenere per 42.2 km)'),
-        ('race_pace', '5:00', 'Ritmo gara (personalizzabile in base alla distanza della gara)'),
-        ('interval', '4:20', 'Ritmo per intervalli intensi (più veloce di Z4, meno intenso di Z5)')
-    ]
-    
-    # Aggiungi esempi di ritmi personalizzati
-    for i, (nome, formato, descrizione) in enumerate(pace_custom_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Ritmi con intervalli
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Ritmi con intervalli'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di ritmi con intervalli
-    pace_range_examples = [
-        # Nome zona, Formato, Descrizione
-        ('easy_range', '6:00-6:30', 'Range di ritmo facile (tra 6:00 e 6:30 min/km)'),
-        ('tempo_range', '5:20-5:40', 'Range di ritmo tempo (tra 5:20 e 5:40 min/km)'),
-        ('threshold_range', '4:50-5:10', 'Range di ritmo soglia (tra 4:50 e 5:10 min/km)'),
-        ('interval_range', '4:00-4:30', 'Range di ritmo per intervalli (tra 4:00 e 4:30 min/km)'),
-        ('fartlek', '4:30-6:00', 'Ampio range per fartlek (alternanza tra veloce e lento)')
-    ]
-    
-    # Aggiungi esempi di ritmi con intervalli
-    for i, (nome, formato, descrizione) in enumerate(pace_range_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Ritmi come percentuale del ritmo soglia
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Ritmi come percentuale del ritmo soglia'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di ritmi come percentuale del ritmo soglia
-    pace_percent_examples = [
-        # Nome zona, Formato, Descrizione
-        ('percent_85', '85% threshold', '85% del ritmo soglia (ritmo di endurance, più lento della soglia)'),
-        ('percent_100', '100% threshold', '100% del ritmo soglia (ritmo di soglia anaerobica)'),
-        ('percent_105', '105% threshold', '105% del ritmo soglia (5% più veloce del ritmo soglia, per intervalli)'),
-        ('percent_range', '90-95% threshold', 'Tra il 90% e il 95% del ritmo soglia (quasi soglia)'),
-        ('fast_percent_range', '105-110% threshold', 'Tra il 105% e il 110% del ritmo soglia (intervalli VO2max)')
-    ]
-    
-    # Aggiungi esempi di ritmi come percentuale
-    for i, (nome, formato, descrizione) in enumerate(pace_percent_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-        
-    # SubHeader: Formati speciali per ritmi
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Formati speciali per ritmi'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di formati speciali per ritmi
-    pace_special_examples = [
-        # Nome zona, Formato, Descrizione
-        ('below_threshold', '<threshold', 'Più lento del ritmo soglia (qualsiasi ritmo sotto la soglia)'),
-        ('above_threshold', '>threshold', 'Più veloce del ritmo soglia (qualsiasi ritmo sopra la soglia)'),
-        ('race_percent', '95% race_pace', '95% del ritmo gara (leggermente più lento del ritmo gara)'),
-        ('marathon_percent', '105% marathon', '5% più veloce del ritmo maratona'),
-        ('threshold_operator', '<=threshold', 'Uguale o più lento del ritmo soglia')
-    ]
-    
-    # Aggiungi esempi di formati speciali per ritmi
-    for i, (nome, formato, descrizione) in enumerate(pace_special_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Ritmi in secondi totali
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Ritmi in secondi totali'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di ritmi in secondi totali
-    pace_seconds_examples = [
-        # Nome zona, Formato, Descrizione
-        ('Z3_seconds', '330', 'Zona 3 in secondi totali (equivalente a 5:30 min/km)'),
-        ('Z4_seconds', '300', 'Zona 4 in secondi totali (equivalente a 5:00 min/km)'),
-        ('threshold_seconds', '310', 'Ritmo soglia in secondi (equivalente a 5:10 min/km)'),
-        ('interval_seconds', '260', 'Ritmo intervalli in secondi (equivalente a 4:20 min/km)'),
-        ('seconds_range', '270-300', 'Range di ritmo in secondi (da 4:30 a 5:00 min/km)')
-    ]
-    
-    # Aggiungi esempi di ritmi in secondi
-    for i, (nome, formato, descrizione) in enumerate(pace_seconds_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # Aggiungi una riga vuota tra le sezioni
-    row += 1
-    
-    # Sezione Configurazione Potenza Ciclismo
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'CONFIGURAZIONE POTENZA PER IL CICLISMO'
-    examples_sheet[f'A{row}'].font = subheader_font
-    examples_sheet[f'A{row}'].fill = pace_fill
-    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-    row += 1
-    
-    # SubHeader: FTP e zone standard
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'FTP e zone standard di potenza'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi per la configurazione della potenza per il ciclismo
-    power_examples = [
-        # Nome zona, Formato, Descrizione
-        ('ftp', '250', 'FTP (Functional Threshold Power) - potenza sostenibile per 1 ora'),
-        ('Z1', '125-175', 'Zona 1: recupero attivo (55-70% FTP)'),
-        ('Z2', '175-215', 'Zona 2: endurance (70-86% FTP)'),
-        ('Z3', '215-250', 'Zona 3: tempo/soglia (86-100% FTP)'),
-        ('Z4', '250-300', 'Zona 4: VO2max (100-120% FTP)'),
-        ('Z5', '300-375', 'Zona 5: capacità anaerobica (120-150% FTP)'),
-        ('Z6', '375+', 'Zona 6: potenza neuromuscolare (>150% FTP)')
-    ]
-    
-    # Aggiungi esempi per la potenza del ciclismo
-    for i, (nome, formato, descrizione) in enumerate(power_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Zone personalizzate
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Zone personalizzate di potenza'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di zone personalizzate
-    power_custom_examples = [
-        # Nome zona, Formato, Descrizione
-        ('recovery', '<125', 'Recupero attivo (<55% FTP)'),
-        ('threshold', '235-265', 'Soglia (94-106% FTP)'),
-        ('sweet_spot', '220-235', 'Sweet Spot (88-94% FTP)'),
-        ('L4', '250-270', 'Livello 4 (intervalli sub-massimali)'),
-        ('sprint', '400+', 'Potenza di sprint (sforzo massimale di breve durata)')
-    ]
-    
-    # Aggiungi esempi per zone personalizzate
-    for i, (nome, formato, descrizione) in enumerate(power_custom_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Potenza come percentuale FTP
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Potenza come percentuale dell\'FTP'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di potenza come percentuale FTP
-    power_percent_examples = [
-        # Nome zona, Formato, Descrizione
-        ('percent_95', '95%', '95% dell\'FTP (appena sotto soglia)'),
-        ('percent_range_70_80', '70-80%', 'Tra il 70% e l\'80% dell\'FTP (endurance)'),
-        ('percent_range_90_100', '90-100%', 'Tra il 90% e il 100% dell\'FTP (tempo/soglia)'),
-        ('percent_range_105_120', '105-120%', 'Tra il 105% e il 120% dell\'FTP (VO2max)'),
-        ('percent_op', '>120%', 'Sopra il 120% dell\'FTP (anaerobico)')
-    ]
-    
-    # Aggiungi esempi per potenza come percentuale FTP
-    for i, (nome, formato, descrizione) in enumerate(power_percent_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # Aggiungi una riga vuota tra le sezioni
-    row += 1
-    
-    # Sezione Configurazione Passi Vasca Nuoto
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'CONFIGURAZIONE PASSI VASCA PER IL NUOTO'
-    examples_sheet[f'A{row}'].font = subheader_font
-    examples_sheet[f'A{row}'].fill = pace_fill
-    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-    row += 1
-    
-    # SubHeader: Zone standard
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Zone standard di passo vasca'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi per la configurazione dei passi vasca per il nuoto
-    swim_examples = [
-        # Nome zona, Formato, Descrizione
-        ('Z1', '2:30', 'Zona 1: recupero attivo (passo molto facile)'),
-        ('Z2', '2:15', 'Zona 2: endurance (passo facile)'),
-        ('Z3', '2:00', 'Zona 3: tempo (passo moderato)'),
-        ('Z4', '1:45', 'Zona 4: soglia (passo duro)'),
-        ('Z5', '1:30', 'Zona 5: VO2max (passo molto duro)')
-    ]
-    
-    # Aggiungi esempi per i passi vasca del nuoto
-    for i, (nome, formato, descrizione) in enumerate(swim_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Zone personalizzate
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Zone personalizzate di passo vasca'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di zone personalizzate per nuoto
-    swim_custom_examples = [
-        # Nome zona, Formato, Descrizione
-        ('recovery', '2:45', 'Passo di recupero (più lento di Z1)'),
-        ('threshold', '1:55', 'Passo soglia (personalizzato)'),
-        ('sprint', '1:25', 'Passo sprint (sforzo massimale)'),
-        ('css', '2:00', 'CSS - Critical Swim Speed (equivalente a FTP per il nuoto)'),
-        ('technique', '2:30-3:00', 'Passo per esercizi tecnici (focus sulla tecnica, non velocità)')
-    ]
-    
-    # Aggiungi esempi per le zone personalizzate del nuoto
-    for i, (nome, formato, descrizione) in enumerate(swim_custom_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Passi come percentuale del passo soglia
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Passi vasca come percentuale del passo soglia'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di passi come percentuale
-    swim_percent_examples = [
-        # Nome zona, Formato, Descrizione
-        ('percent_90', '90% threshold', '90% del passo soglia (leggermente più lento della soglia)'),
-        ('percent_100', '100% threshold', 'Esattamente il passo soglia'),
-        ('percent_105', '105% threshold', '5% più veloce del passo soglia (intervalli)'),
-        ('percent_range', '95-100% threshold', 'Tra il 95% e il 100% del passo soglia (quasi soglia)'),
-        ('percent_op', '<threshold', 'Più lento del passo soglia (per recupero attivo)')
-    ]
-    
-    # Aggiungi esempi di passi come percentuale
-    for i, (nome, formato, descrizione) in enumerate(swim_percent_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Passi con intervalli
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Passi vasca con intervalli'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi di passi con intervalli per nuoto
-    swim_range_examples = [
-        # Nome zona, Formato, Descrizione
-        ('easy_range', '2:15-2:30', 'Range di passo facile (tra 2:15 e 2:30 min/100m)'),
-        ('tempo_range', '1:50-2:05', 'Range di passo tempo (tra 1:50 e 2:05 min/100m)'),
-        ('threshold_range', '1:50-2:00', 'Range di passo soglia (tra 1:50 e 2:00 min/100m)'),
-        ('interval_range', '1:30-1:45', 'Range di passo per intervalli (tra 1:30 e 1:45 min/100m)'),
-        ('multi_pace', '1:45-2:30', 'Ampio range per allenamenti multivelocità')
-    ]
-    
-    # Aggiungi esempi di passi con intervalli per il nuoto
-    for i, (nome, formato, descrizione) in enumerate(swim_range_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # Aggiungi una riga vuota tra le sezioni
-    row += 1
-    
-    # Sezione Configurazione Frequenze Cardiache
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'CONFIGURAZIONE FREQUENZE CARDIACHE'
-    examples_sheet[f'A{row}'].font = subheader_font
-    examples_sheet[f'A{row}'].fill = hr_fill
-    examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
-    row += 1
-    
-    # SubHeader: Parametro fondamentale
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Parametro fondamentale'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Frequenza cardiaca massima
-    max_hr_example = [
-        # Nome zona, Formato, Descrizione
-        ('max_hr', '180', 'Frequenza cardiaca massima (personalizza con il tuo valore)'),
-    ]
-    
-    # Aggiungi FC massima
-    for i, (nome, formato, descrizione) in enumerate(max_hr_example):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Zone standard in BPM
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Zone standard in battiti al minuto (bpm)'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi per la configurazione delle frequenze cardiache in BPM
-    hr_examples = [
-        # Nome zona, Formato, Descrizione
-        ('Z1_HR', '110-125', 'Zona 1: recupero attivo (60-70% max_hr)'),
-        ('Z2_HR', '125-140', 'Zona 2: endurance (70-78% max_hr)'),
-        ('Z3_HR', '140-155', 'Zona 3: tempo (78-87% max_hr)'),
-        ('Z4_HR', '155-165', 'Zona 4: soglia (87-92% max_hr)'),
-        ('Z5_HR', '165-180', 'Zona 5: VO2max (92-100% max_hr)')
-    ]
-    
-    # Aggiungi esempi per le frequenze cardiache
-    for i, (nome, formato, descrizione) in enumerate(hr_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Zone con FC singola
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Zone con valori singoli'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi per FC con valori singoli
-    hr_single_examples = [
-        # Nome zona, Formato, Descrizione
-        ('recovery_HR', '110', 'FC di recupero (valore fisso)'),
-        ('aerobic_HR', '130', 'FC aerobica (valore fisso)'),
-        ('threshold_HR', '160', 'FC di soglia anaerobica (valore fisso)'),
-        ('max_effort', '175', 'FC sforzo massimo (valore fisso)'),
-        ('resting_HR', '50', 'FC a riposo (valore di riferimento)')
-    ]
-    
-    # Aggiungi esempi di FC con valori singoli
-    for i, (nome, formato, descrizione) in enumerate(hr_single_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Zone con percentuali
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Zone come percentuale della FC max'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi per FC in percentuale
-    hr_percent_examples = [
-        # Nome zona, Formato, Descrizione
-        ('easy_pct', '60-70% max_hr', 'Zona facile (60-70% della FC max)'),
-        ('aerobic_pct', '70-80% max_hr', 'Zona aerobica (70-80% della FC max)'),
-        ('tempo_pct', '80-87% max_hr', 'Zona tempo (80-87% della FC max)'),
-        ('threshold_pct', '87-92% max_hr', 'Zona soglia (87-92% della FC max)'),
-        ('anaerobic_pct', '92-100% max_hr', 'Zona anaerobica (92-100% della FC max)')
-    ]
-    
-    # Aggiungi esempi di FC in percentuale
-    for i, (nome, formato, descrizione) in enumerate(hr_percent_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # SubHeader: Percentuali singole e operatori
-    examples_sheet.merge_cells(f'A{row}:C{row}')
-    examples_sheet[f'A{row}'] = 'Percentuali singole e operatori speciali'
-    examples_sheet[f'A{row}'].font = section_font
-    examples_sheet[f'A{row}'].alignment = wrapped_alignment
-    row += 1
-    
-    # Esempi per FC con percentuali singole e operatori
-    hr_special_examples = [
-        # Nome zona, Formato, Descrizione
-        ('pct_80', '80% max_hr', 'Esattamente l\'80% della FC max'),
-        ('pct_90', '90% max_hr', 'Esattamente il 90% della FC max'),
-        ('below_70', '<70% max_hr', 'Sotto il 70% della FC max'),
-        ('above_90', '>90% max_hr', 'Sopra il 90% della FC max'),
-        ('Z3_pct_alt', '75%', 'Definizione alternativa, percentuale diretta')
-    ]
-    
-    # Aggiungi esempi di FC con percentuali singole e operatori
-    for i, (nome, formato, descrizione) in enumerate(hr_special_examples):
-        examples_sheet[f'A{row}'] = nome
-        examples_sheet[f'B{row}'] = formato
-        examples_sheet[f'C{row}'] = descrizione
-        
-        # Applica bordi e formattazione a tutte le celle della riga
-        for col in ['A', 'B', 'C']:
-            cell = examples_sheet[f'{col}{row}']
-            cell.border = thin_border
-            cell.alignment = wrapped_alignment
-            
-            # Applica un colore di sfondo alternato per migliorare la leggibilità
-            if i % 2 == 0:
-                cell.fill = alternate_fill
-        
-        row += 1
-    
-    # Aggiungi una riga vuota tra le sezioni
-    row += 1
-    
     # Sezione Running
+    row = 3
     examples_sheet.merge_cells(f'A{row}:C{row}')
     examples_sheet[f'A{row}'] = 'ESEMPI PER LA CORSA (RUNNING)'
     examples_sheet[f'A{row}'].font = subheader_font
@@ -3273,35 +2776,39 @@ def create_unified_examples_sheet(workbook):
     examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
     row += 1
     
-    # Esempi per la corsa
+    # Esempi per la corsa - ora più dettagliati ed esplicativi
     running_examples = [
-        # Distanza
-        ('Distanza', 'Esempio di allenamento basato su distanza', 
-         "warmup: 2km @Z1_HR\ninterval: 5km @Z3\ncooldown: 1km @Z1_HR"),
+        # Durata basata su tempo
+        ('Tempo', 'Allenamento continuo basato su tempo', 
+         "warmup: 10min @Z1_HR -- Riscaldamento lento\ninterval: 30min @Z2 -- Ritmo aerobico costante\ncooldown: 5min @Z1_HR -- Defaticamento"),
         
-        # Tempo
-        ('Tempo', 'Esempio di allenamento basato su tempo', 
-         "warmup: 10min @Z1_HR\ninterval: 30min @Z2\ncooldown: 5min @Z1_HR"),
+        # Durata basata su distanza
+        ('Distanza', 'Allenamento continuo basato su distanza', 
+         "warmup: 2km @Z1_HR -- Riscaldamento\ninterval: 5km @Z3 -- Ritmo medio\ncooldown: 1km @Z1_HR -- Defaticamento"),
         
-        # Ripetute semplici
-        ('Ripetute semplici', 'Esempio di allenamento con ripetute', 
-         "warmup: 10min @Z1_HR\nrepeat 5:\n  interval: 1km @Z4\n  recovery: 2min @Z1_HR\ncooldown: 10min @Z1_HR"),
+        # Ripetute classiche
+        ('Ripetute', 'Classiche ripetute con recupero', 
+         "warmup: 10min @Z1_HR\nrepeat 5:\n  interval: 400m @Z5 -- Ritmo veloce\n  recovery: 2min @Z1_HR -- Recupero attivo\ncooldown: 10min @Z1_HR"),
         
-        # Con descrizioni
-        ('Con descrizioni', 'Esempio con descrizioni per ogni passo', 
-         "warmup: 10min @Z1_HR -- Inizia lentamente\ninterval: 20min @Z3 -- Mantieni ritmo costante\ncooldown: 5min @Z1_HR -- Rallenta gradualmente"),
+        # Ripetute con zone personalizzate
+        ('Zone personalizzate', 'Utilizzo di zone personalizzate', 
+         "warmup: 15min @Z1_HR\ninterval: 15min @marathon -- Ritmo maratona\ninterval: 10min @threshold -- Ritmo soglia\ninterval: 5min @race_pace -- Ritmo gara\ncooldown: 10min @Z1_HR"),
         
-        # Pulsante lap
-        ('Pulsante lap', 'Esempio con pulsante lap', 
-         "warmup: 10min @Z1_HR\nrest: lap-button @Z1_HR -- Premi lap quando sei pronto\ninterval: 5km @Z3\ncooldown: 5min @Z1_HR"),
+        # Ripetute con passo specifico
+        ('Passo specifico', 'Utilizzo di un passo specifico invece di una zona', 
+         "warmup: 10min @Z1_HR\nrepeat 4:\n  interval: 800m @4:30 -- Ritmo specifico 4:30 min/km\n  recovery: 3min @Z1_HR\ncooldown: 10min @Z1_HR"),
         
-        # Zone personalizzate
-        ('Zone personalizzate', 'Esempio con zone personalizzate', 
-         "warmup: 10min @Z1_HR\ninterval: 20min @marathon\ninterval: 10min @threshold\ncooldown: 5min @Z1_HR"),
-         
-        # Percentuali
-        ('Percentuali', 'Esempio con ritmi espressi come percentuale', 
-         "warmup: 10min @Z1_HR\ninterval: 20min @90% threshold\ninterval: 5min @105% threshold\ncooldown: 10min @Z1_HR")
+        # Pulsante Lap
+        ('Pulsante Lap', 'Utilizzo del pulsante Lap per terminare un passo', 
+         "warmup: 10min @Z1_HR\nrest: lap-button -- Premi il pulsante Lap quando sei pronto\ninterval: 5km @Z4\ncooldown: 5min @Z1_HR"),
+        
+        # Allenamento con zone HR
+        ('Zone frequenza cardiaca', 'Utilizzo di zone di frequenza cardiaca', 
+         "warmup: 10min @hr Z1_HR -- FC bassa\ninterval: 20min @hr Z3_HR -- FC moderata\ninterval: 10min @hr Z4_HR -- FC elevata\ncooldown: 5min @hr Z1_HR -- FC bassa"),
+        
+        # Ripetute a piramide
+        ('Piramide', 'Allenamento a piramide con distanze crescenti e decrescenti', 
+         "warmup: 10min @Z1_HR\nrepeat 1:\n  interval: 400m @Z4\n  recovery: 2min @Z1_HR\n  interval: 800m @Z4\n  recovery: 3min @Z1_HR\n  interval: 1200m @Z4\n  recovery: 3min @Z1_HR\n  interval: 800m @Z4\n  recovery: 2min @Z1_HR\n  interval: 400m @Z4\ncooldown: 10min @Z1_HR"),
     ]
     
     # Aggiungi esempi per la corsa
@@ -3333,31 +2840,39 @@ def create_unified_examples_sheet(workbook):
     examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
     row += 1
     
-    # Esempi per il ciclismo
+    # Esempi per il ciclismo - migliorati con focus sulla potenza e con esempi più pratici
     cycling_examples = [
-        # Potenza - Zone
-        ('Potenza (Zone)', 'Allenamento basato su zone di potenza', 
-         "warmup: 15min @hr Z1_HR\ninterval: 40min @pwr Z3\ncooldown: 10min @hr Z1_HR"),
+        # Potenza - Zone FTP
+        ('Potenza (Zone FTP)', 'Allenamento con zone di potenza basate sull\'FTP', 
+         "warmup: 15min @hr Z1_HR -- FC bassa per riscaldamento\ninterval: 30min @pwr Z3 -- Zona 3 (86-100% FTP)\ncooldown: 10min @hr Z1_HR -- FC bassa per defaticamento"),
         
-        # Potenza - Percentuale FTP
-        ('Potenza (% FTP)', 'Allenamento basato su percentuali FTP', 
-         "warmup: 15min @hr Z1_HR\ninterval: 20min @pwr 90%\ncooldown: 10min @hr Z1_HR"),
+        # Potenza - Valori FTP specifici
+        ('Potenza (% FTP)', 'Allenamento con percentuali specifiche dell\'FTP', 
+         "warmup: 15min @hr Z1_HR\ninterval: 20min @pwr 90% -- 90% dell'FTP\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - Intervallo percentuale
+        ('Potenza (range %)', 'Allenamento con intervallo percentuale dell\'FTP', 
+         "warmup: 15min @hr Z1_HR\ninterval: 20min @pwr 75-85% -- Tra 75% e 85% dell'FTP\ncooldown: 10min @hr Z1_HR"),
         
         # Potenza - Sweet Spot
-        ('Sweet Spot', 'Allenamento Sweet Spot (88-94% FTP)', 
-         "warmup: 15min @hr Z1_HR\nrepeat 3:\n  interval: 12min @pwr sweet_spot\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        ('Sweet Spot', 'Allenamento "Sweet Spot" (88-94% FTP)', 
+         "warmup: 15min @hr Z1_HR\nrepeat 3:\n  interval: 12min @pwr sweet_spot -- 88-94% FTP\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
         
-        # Potenza - Ripetute
-        ('Ripetute potenza', 'Ripetute ad alta intensità', 
-         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr Z5\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        # Potenza - Intervalli
+        ('Intervalli di potenza', 'Intervalli ad alta intensità con recupero', 
+         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr Z5 -- Zona 5 (120-150% FTP)\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
         
         # Potenza - VO2max
-        ('VO2max', 'Allenamento VO2max', 
-         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr 110-120%\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        ('VO2max', 'Intervalli al 110-120% dell\'FTP per sviluppare il VO2max', 
+         "warmup: 15min @hr Z1_HR\nrepeat 5:\n  interval: 3min @pwr 110-120% -- Oltre soglia\n  recovery: 3min @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
         
         # Potenza - Neuromuscolare
-        ('Neuromuscolare', 'Allenamento potenza neuromuscolare', 
-         "warmup: 15min @hr Z1_HR\nrepeat 10:\n  interval: 30sec @pwr Z6\n  recovery: 4min30sec @hr Z1_HR\ncooldown: 10min @hr Z1_HR")
+        ('Neuromuscolare', 'Sprint brevi ad altissima intensità', 
+         "warmup: 15min @hr Z1_HR\nrepeat 10:\n  interval: 30sec @pwr Z6 -- Potenza massimale\n  recovery: 4min30sec @hr Z1_HR\ncooldown: 10min @hr Z1_HR"),
+        
+        # Potenza - Threshold
+        ('Threshold', 'Blocchi di soglia con recupero breve', 
+         "warmup: 15min @hr Z1_HR\nrepeat 3:\n  interval: 10min @pwr threshold -- Zona soglia\n  recovery: 2min @hr Z1_HR\ncooldown: 15min @hr Z1_HR"),
     ]
     
     # Aggiungi esempi per il ciclismo
@@ -3389,35 +2904,39 @@ def create_unified_examples_sheet(workbook):
     examples_sheet[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
     row += 1
     
-    # Esempi per il nuoto
+    # Esempi per il nuoto - nuova sezione dettagliata
     swimming_examples = [
-        # Distanza
-        ('Distanza', 'Esempio di allenamento basato su distanza', 
-         "warmup: 200m @Z1_HR\ninterval: 800m @Z3\ncooldown: 100m @Z1_HR"),
+        # Distanza continua
+        ('Distanza continua', 'Nuotata continua di resistenza', 
+         "warmup: 200m @Z1_HR -- Riscaldamento lento\ninterval: 1000m @Z2 -- Ritmo costante\ncooldown: 100m @Z1_HR -- Defaticamento"),
         
-        # Tempo
-        ('Tempo', 'Esempio di allenamento basato su tempo', 
-         "warmup: 5min @Z1_HR\ninterval: 20min @Z2\ncooldown: 5min @Z1_HR"),
+        # Allenamento a intervalli
+        ('Intervalli', 'Intervalli con recupero per il nuoto', 
+         "warmup: 200m @Z1_HR\nrepeat 5:\n  interval: 100m @Z4 -- Ritmo veloce\n  recovery: 30s @Z1_HR -- Recupero breve\ncooldown: 100m @Z1_HR"),
         
-        # Ripetute semplici
-        ('Ripetute semplici', 'Esempio di allenamento con ripetute', 
-         "warmup: 200m @Z1_HR\nrepeat 5:\n  interval: 100m @Z4\n  recovery: 30s @Z1_HR\ncooldown: 100m @Z1_HR"),
+        # Tecniche di nuoto
+        ('Tecniche diverse', 'Allenamento con diverse tecniche di nuoto', 
+         "warmup: 200m @Z1_HR -- Stile libero lento\nrepeat 4:\n  interval: 50m @Z3 -- Stile libero\n  interval: 50m @Z2 -- Dorso\n  recovery: 20s @Z1_HR\ncooldown: 100m @Z1_HR -- Nuoto lento a scelta"),
         
-        # Ripetute con tecniche diverse
-        ('Tecniche diverse', 'Esempio di allenamento con diverse tecniche di nuoto', 
-         "warmup: 200m @Z1_HR\nrepeat 4:\n  interval: 50m @Z3 -- Stile libero\n  interval: 50m @Z2 -- Dorso\n  recovery: 20s @Z1_HR\ncooldown: 100m @Z1_HR"),
+        # Sprint 
+        ('Sprint', 'Allenamento con sprint brevi e massimali', 
+         "warmup: 300m @Z1_HR\nrepeat 8:\n  interval: 25m @sprint -- Sprint massimale\n  recovery: 45s @Z1_HR -- Recupero completo\ncooldown: 200m @Z1_HR"),
         
-        # Con descrizioni
-        ('Con descrizioni', 'Esempio con descrizioni per ogni passo', 
-         "warmup: 200m @Z1_HR -- Stile libero lento\ninterval: 400m @Z3 -- Alternare stile ogni 100m\ncooldown: 100m @Z1_HR -- Dorso rilassato"),
+        # Threshold
+        ('Threshold', 'Allenamento alla soglia anaerobica', 
+         "warmup: 300m @Z1_HR\nrepeat 3:\n  interval: 200m @threshold -- Ritmo soglia\n  recovery: 45s @Z1_HR\ncooldown: 200m @Z1_HR"),
         
-        # Zone personalizzate
-        ('Zone personalizzate', 'Esempio con zone personalizzate', 
-         "warmup: 200m @Z1_HR\ninterval: 400m @threshold\nrepeat 4:\n  interval: 50m @sprint\n  recovery: 50m @recovery\ncooldown: 100m @Z1_HR"),
-         
-        # Percentuali
-        ('Percentuali', 'Esempio con ritmi espressi come percentuale', 
-         "warmup: 200m @Z1_HR\ninterval: 300m @95% threshold\nrepeat 3:\n  interval: 50m @110% threshold\n  recovery: 50m @Z1_HR\ncooldown: 100m @Z1_HR")
+        # Piramide
+        ('Piramide', 'Allenamento a piramide con distanze crescenti e decrescenti', 
+         "warmup: 200m @Z1_HR\nrepeat 1:\n  interval: 50m @Z4\n  recovery: 20s @Z1_HR\n  interval: 100m @Z4\n  recovery: 30s @Z1_HR\n  interval: 150m @Z4\n  recovery: 40s @Z1_HR\n  interval: 100m @Z4\n  recovery: 30s @Z1_HR\n  interval: 50m @Z4\ncooldown: 100m @Z1_HR"),
+        
+        # Tecnica con lap-button
+        ('Tecnica - Pulsante Lap', 'Esercizi tecnici terminati con pulsante Lap', 
+         "warmup: 200m @Z1_HR\nrepeat 5:\n  rest: lap-button -- Premi lap quando sei pronto\n  interval: 50m @Z3 -- Focus sulla tecnica delle bracciate\n  recovery: 15s @Z1_HR\ncooldown: 100m @Z1_HR"),
+        
+        # Mix di stili
+        ('Mix di stili', 'Combinazione di diversi stili di nuoto', 
+         "warmup: 200m @Z1_HR -- Stile libero\ninterval: 200m @Z2 -- Dorso\ninterval: 200m @Z2 -- Rana\ninterval: 200m @Z2 -- Stile libero\ncooldown: 100m @Z1_HR -- Stile a scelta")
     ]
     
     # Aggiungi esempi per il nuoto
@@ -3448,17 +2967,18 @@ def create_unified_examples_sheet(workbook):
     examples_sheet[f'A{row}'].alignment = wrapped_alignment
     row += 1
     
-    # Regole di sintassi comuni
+    # Regole di sintassi comuni - Espanse e più dettagliate
     syntax_rules = [
-        "Tipi di passo: warmup, interval, recovery, cooldown, rest, repeat, other",
-        "Durata: tempo (s, min, h) o distanza (m, km)",
-        "Per la corsa: usa @ per il ritmo (es. @Z2, @90% threshold) e @hr per la frequenza cardiaca (es. @hr Z2_HR)",
-        "Per il ciclismo: usa @pwr per la potenza (es. @pwr Z3, @pwr 90%), @spd per la velocità (es. @spd Z3) e @hr per FC (es. @hr Z1_HR)",
-        "Per il nuoto: usa @ per il passo vasca (es. @Z2, @95% threshold) o @swim per specifico (es. @swim Z3), @hr per FC (es. @hr Z2_HR)",
-        "Zone ritmo: Z1-Z5 o qualsiasi zona definita nella sezione Ritmi",
-        "Zone potenza: Z1-Z6, percentuali FTP (es. 90%), percentuali di threshold o zone come sweet_spot, threshold",
+        "Formato generale: tipo_passo: misura [@target] [-- descrizione]",
+        "Tipi di passo: warmup (riscaldamento), interval (intervallo), recovery (recupero), cooldown (defaticamento), rest (riposo), repeat (ripetizione), other (altro)",
+        "Misura: tempo (10min, 1h, ecc.) o distanza (400m, 5km, ecc.)",
+        "Target per corsa: usa @ per il ritmo (es. @Z2, @marathon, @4:30) e @hr per la frequenza cardiaca (es. @hr Z2_HR)",
+        "Target per ciclismo: usa @pwr per la potenza (es. @pwr Z3, @pwr 90%, @pwr 220-250) e @hr per la FC (es. @hr Z1_HR)",
+        "Target per nuoto: usa @ per il passo vasca (es. @Z2, @threshold, @1:45) e @hr per la FC (es. @hr Z2_HR)",
+        "Zone ritmo/velocità: Z1-Z5 o qualsiasi zona definita nel foglio Paces",
+        "Zone potenza: Z1-Z6, percentuali come 90% o 75-85%, o zone come sweet_spot, threshold",
         "Zone freq. cardiaca: Z1_HR-Z5_HR o qualsiasi zona definita nel foglio HeartRates",
-        "Repeat: repeat N: seguito da step indentati con 2 spazi",
+        "Per ripetizioni: repeat N: seguito da step indentati con 2 spazi",
         "Descrizioni opzionali: aggiungi -- seguito dalla descrizione alla fine del passo"
     ]
     
@@ -3470,7 +2990,6 @@ def create_unified_examples_sheet(workbook):
         row += 1
     
     return examples_sheet
-
 
 def safe_adjust_column_widths(worksheet):
     """
