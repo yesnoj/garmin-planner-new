@@ -1143,9 +1143,9 @@ class ImportExportFrame(ttk.Frame):
             imported_workouts = 0
             skipped_workouts = 0
             
-            # MODIFICA: Svuota completamente la lista degli allenamenti esistenti
-            current_workouts = []
-            self.write_log("Lista degli allenamenti svuotata prima dell'importazione")
+            # Ottieni gli allenamenti correnti dall'editor
+            current_workouts = self.controller.workout_editor_frame.workouts
+            current_names = [name for name, _ in current_workouts]
             
             # Importa gli allenamenti
             for name, steps in data.items():
@@ -1153,23 +1153,35 @@ class ImportExportFrame(ttk.Frame):
                 if name in config_keys:
                     continue
                 
-                # Aggiungi il nuovo allenamento
-                current_workouts.append((name, steps))
-                self.write_log(f"Allenamento importato: {name}")
+                # Verifica se esiste già
+                if name in current_names:
+                    if overwrite:
+                        # Rimuovi l'allenamento esistente
+                        idx = current_names.index(name)
+                        current_workouts[idx] = (name, steps)
+                        self.write_log(f"Allenamento aggiornato: {name}")
+                    else:
+                        skipped_workouts += 1
+                        self.write_log(f"Allenamento saltato (già esistente): {name}")
+                        continue
+                else:
+                    # Aggiungi il nuovo allenamento
+                    current_workouts.append((name, steps))
+                    self.write_log(f"Allenamento importato: {name}")
+                
                 imported_workouts += 1
             
-            # Aggiorna la lista degli allenamenti nell'editor
-            self.controller.workout_editor_frame.workouts = current_workouts
+            # Aggiorna la lista degli allenamenti
             self.controller.workout_editor_frame.refresh_workout_list()
             
             # Mostra un messaggio di conferma
             messagebox.showinfo("Importazione completata", 
                               f"Importati {imported_workouts} allenamenti.\n"
-                              f"Sostituiti gli allenamenti esistenti.", 
+                              f"Saltati {skipped_workouts} allenamenti.", 
                               parent=self)
             
             # Log
-            self.write_log(f"Importazione completata: {imported_workouts} importati, lista precedente sostituita")
+            self.write_log(f"Importazione completata: {imported_workouts} importati, {skipped_workouts} saltati")
             
             # Aggiungi ai file recenti
             self.add_to_recent_files(filename)
