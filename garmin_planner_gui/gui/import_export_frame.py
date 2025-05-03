@@ -479,8 +479,6 @@ class ImportExportFrame(ttk.Frame):
     def export_to_file(self):
         """Esporta allenamenti in un file YAML (o Excel in base all'estensione)"""
         import os  # Reimportiamo os per sicurezza
-        from planner.excel_to_yaml_converter import normalize_pace_format
-        from collections import OrderedDict
         
         # Ottieni il nome del file destinazione
         filename = self.export_dest_file_var.get().strip()
@@ -561,46 +559,6 @@ class ImportExportFrame(ttk.Frame):
                                           f"Formato file non supportato", 
                                           parent=self)
                         return
-                
-                # Rimuovi i paces duplicati dalla sezione config se sono già a livello root
-                # Questo è fondamentale per evitare la duplicazione
-                if 'paces' in data and 'config' in data and 'paces' in data['config']:
-                    del data['config']['paces']
-                    
-                if 'swim_paces' in data and 'config' in data and 'swim_paces' in data['config']:
-                    del data['config']['swim_paces']
-                    
-                if 'power_values' in data and 'config' in data and 'power_values' in data['config']:
-                    del data['config']['power_values']
-                    
-                # Normalizza i ritmi a livello root
-                if 'paces' in data:
-                    normalized_paces = {}
-                    for name, value in data['paces'].items():
-                        normalized_paces[name] = normalize_pace_format(value)
-                    data['paces'] = normalized_paces
-                    
-                # Normalizza i passi vasca
-                if 'swim_paces' in data:
-                    normalized_swim_paces = {}
-                    for name, value in data['swim_paces'].items():
-                        normalized_swim_paces[name] = normalize_pace_format(value)
-                    data['swim_paces'] = normalized_swim_paces
-                
-                # Se clean è attivo, pulisci i dati
-                if clean:
-                    self.write_log("Pulizia dei dati in corso...")
-                    # Rimuovi eventuali passi vuoti o nulli
-                    for name, steps in list(data.items()):
-                        if not isinstance(steps, list) and not name.startswith('config') and name not in ['athlete_name', 'paces', 'power_values', 'swim_paces']:
-                            continue  # Salta le chiavi che non sono allenamenti
-                        
-                        if isinstance(steps, list):
-                            cleaned_steps = []
-                            for step in steps:
-                                if step:  # Se non è None
-                                    cleaned_steps.append(step)
-                            data[name] = cleaned_steps
             else:
                 # Usa gli allenamenti in memoria
                 workouts = self.controller.workout_editor_frame.workouts
@@ -626,20 +584,6 @@ class ImportExportFrame(ttk.Frame):
                         if section in config:
                             data[section] = config.pop(section)
                     
-                    # Normalizza i ritmi
-                    if 'paces' in data:
-                        normalized_paces = {}
-                        for name, value in data['paces'].items():
-                            normalized_paces[name] = normalize_pace_format(value)
-                        data['paces'] = normalized_paces
-                        
-                    # Normalizza i passi vasca
-                    if 'swim_paces' in data:
-                        normalized_swim_paces = {}
-                        for name, value in data['swim_paces'].items():
-                            normalized_swim_paces[name] = normalize_pace_format(value)
-                        data['swim_paces'] = normalized_swim_paces
-                    
                     # Il resto della configurazione va in config
                     data['config'] = config
                     
@@ -662,52 +606,8 @@ class ImportExportFrame(ttk.Frame):
             
             # Esporta in base al formato
             if ext in ['.yaml', '.yml']:
-                # Prepara i dati in un ordine coerente per il YAML
-                ordered_data = {}
-                
-                # 1. Prima config con ordine specifico interno
-                if 'config' in data:
-                    config_ordered = {}
-                    
-                    # Ordine delle sezioni all'interno di config
-                    config_sections = [
-                        'margins',
-                        'name_prefix',
-                        'sport_type',
-                        'athlete_name',
-                        'race_day',
-                        'preferred_days',
-                        'heart_rates'  # heart_rates sempre alla fine di config
-                    ]
-                    
-                    # Aggiungi le sezioni di config nell'ordine specificato
-                    for section in config_sections:
-                        if section in data['config']:
-                            config_ordered[section] = data['config'][section]
-                    
-                    # Aggiungi eventuali sezioni non specificate nell'ordine
-                    for key, value in data['config'].items():
-                        if key not in config_ordered:
-                            config_ordered[key] = value
-                    
-                    ordered_data['config'] = config_ordered
-                
-                # 2. Poi athlete_name
-                if 'athlete_name' in data:
-                    ordered_data['athlete_name'] = data['athlete_name']
-                
-                # 3. Poi le sezioni di ritmi, potenza, ecc.
-                for section in ['paces', 'power_values', 'swim_paces']:
-                    if section in data:
-                        ordered_data[section] = data[section]
-                
-                # 4. Infine gli allenamenti - tutte le chiavi che non sono già state processate
-                for key, value in data.items():
-                    if key not in ordered_data:
-                        ordered_data[key] = value
-                
                 # Normalizza tutti i ritmi prima dell'esportazione
-                normalized_data = self.prepare_data_for_yaml_export(ordered_data)
+                normalized_data = self.prepare_data_for_yaml_export(data)
                 
                 with open(filename, 'w', encoding='utf-8') as f:
                     yaml.dump(normalized_data, f, default_flow_style=False, sort_keys=False, Dumper=NoAliasDumper)
@@ -1053,6 +953,28 @@ class ImportExportFrame(ttk.Frame):
                 for section in ['margins', 'name_prefix', 'sport_type', 'preferred_days']:
                     if section in new_config:
                         self.controller.config['workout_config'][section] = new_config[section]
+                
+                # Correzione per i margini: converti i valori float in interi o stringhe pulite
+                if 'margins' in new_config:
+                    margins = new_config['margins']
+                    # Processa 'slower' e 'faster' margins
+                    for key in ['slower', 'faster']:
+                        if key in margins:
+                            value = margins[key]
+                            # Se è un float ma rappresenta un intero, converti in int
+                            if isinstance(value, float) and value.is_integer():
+                                margins[key] = str(int(value))
+                            # Se è una stringa con decimale come "5.0", rimuovi la parte decimale
+                            elif isinstance(value, str) and '.' in value:
+                                try:
+                                    float_val = float(value)
+                                    if float_val.is_integer():
+                                        margins[key] = str(int(float_val))
+                                except ValueError:
+                                    pass
+                    
+                    # Aggiorna i margini nel config
+                    self.controller.config['workout_config']['margins'] = margins
                 
                 # Sezioni che potrebbero essere sia in config che a livello root
                 # Priorità: prima prendi dal root, poi da config

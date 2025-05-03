@@ -485,10 +485,12 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
         import openpyxl
         from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
         import os
+        import copy
         import re
         
         # Estrai la configurazione
         config = yaml_data.get('config', {})
+        
         sport_type = config.get('sport_type', 'running')
         
         logging.info(f"Tipo di sport rilevato: {sport_type}")
@@ -568,7 +570,20 @@ def yaml_to_excel(yaml_data, excel_file, create_new=False):
         
         # Aggiorna gli allenamenti
         if 'Workouts' in wb.sheetnames:
-            update_workouts_sheet(wb['Workouts'], yaml_data)
+            # CORREZIONE: Crea una deep copy del yaml_data per sicurezza
+            yaml_data_copy = copy.deepcopy(yaml_data)
+            
+            # CORREZIONE: Assicurati che tutte le ripetute siano formattate correttamente
+            for key, value in yaml_data_copy.items():
+                if isinstance(value, list) and key not in ['config', 'athlete_name', 'paces', 'power_values', 'swim_paces', 'heart_rates']:
+                    # Questo è un allenamento, dobbiamo assicurarci che ogni passo repeat sia correttamente formattato
+                    for i, step in enumerate(value):
+                        if isinstance(step, dict) and 'repeat' in step:
+                            # Assicurati che il passo repeat abbia sempre la proprietà steps
+                            if 'steps' not in step or not isinstance(step['steps'], list):
+                                step['steps'] = []
+            
+            update_workouts_sheet(wb['Workouts'], yaml_data_copy)
         
         # Garantisci che gli esempi siano sempre presenti
         if 'Examples' in wb.sheetnames:
@@ -858,13 +873,16 @@ def update_unified_paces_sheet(paces_sheet, paces, power_values, swim_paces, spo
     paces_sheet[f'A{row}'].font = Font(italic=True)
     paces_sheet[f'A{row}'].alignment = wrapped_alignment
 
+
+
+
 def format_steps_for_excel(steps, sport_type="running"):
     """
     Formatta i passi per il foglio Excel con la corretta indentazione.
     
     Args:
         steps: Lista di passi dell'allenamento
-        sport_type: Tipo di sport ('running' o 'cycling')
+        sport_type: Tipo di sport ('running', 'cycling' o 'swimming')
         
     Returns:
         Testo formattato dei passi
@@ -872,54 +890,64 @@ def format_steps_for_excel(steps, sport_type="running"):
     formatted_steps = []
     
     for step in steps:
-        if 'repeat' in step and 'steps' in step:
-            # Passo di tipo repeat
+        # Check if this is a metadata step (like sport_type or date)
+        if isinstance(step, dict) and len(step) == 1:
+            key = list(step.keys())[0]
+            if key in ['sport_type', 'date']:
+                continue  # Skip metadata steps
+        
+        # Handle repeat steps
+        if isinstance(step, dict) and 'repeat' in step and 'steps' in step:
+            # Format the repeat step
             iterations = step['repeat']
             substeps = step['steps']
             
-            # Formatta il passo di repeat
             formatted_steps.append(f"repeat {iterations}:")
             
-            # Formatta i substeps con indentazione
+            # Format the substeps with indentation
             for substep in substeps:
                 if isinstance(substep, dict) and len(substep) == 1:
+                    # Get the step type and detail
                     substep_type = list(substep.keys())[0]
                     substep_detail = substep[substep_type]
                     
-                    # Gestisci i diversi formati in base al tipo di sport
+                    # Handle different formats based on sport type
                     if sport_type == "cycling":
-                        # Per il ciclismo, assicurati che @ diventi @spd nei passi che hanno zona di ritmo
-                        if '@' in substep_detail and '@spd' not in substep_detail and '@hr' not in substep_detail:
-                            substep_detail = substep_detail.replace('@', '@spd ')
-                    else:  # running
-                        # Per la corsa, assicurati che @spd diventi @ nei passi che hanno zona di velocità
+                        # For cycling, make sure we have @pwr, @spd, or @hr
+                        if '@' in substep_detail and '@pwr' not in substep_detail and '@spd' not in substep_detail and '@hr' not in substep_detail:
+                            # Default to @pwr for cycling
+                            substep_detail = substep_detail.replace('@', '@pwr ')
+                    elif sport_type == "running" or sport_type == "swimming":
+                        # For running and swimming, convert @spd to @ and @pwr to @
                         if '@spd' in substep_detail:
                             substep_detail = substep_detail.replace('@spd ', '@')
+                        if '@pwr' in substep_detail:
+                            substep_detail = substep_detail.replace('@pwr ', '@')
                     
-                    # Usa l'indentazione con due spazi per i substep
+                    # Add indentation with two spaces for substeps
                     formatted_steps.append(f"  {substep_type}: {substep_detail}")
         
+        # Handle regular steps (not repeats)
         elif isinstance(step, dict) and len(step) == 1:
-            # Passo normale
             step_type = list(step.keys())[0]
             step_detail = step[step_type]
             
-            # Gestisci i diversi formati in base al tipo di sport
+            # Handle different formats based on sport type
             if sport_type == "cycling":
-                # Per il ciclismo, assicurati che @ diventi @spd nei passi che hanno zona di ritmo
-                if '@' in step_detail and '@spd' not in step_detail and '@hr' not in step_detail:
-                    step_detail = step_detail.replace('@', '@spd ')
-            else:  # running
-                # Per la corsa, assicurati che @spd diventi @ nei passi che hanno zona di velocità
+                # For cycling, make sure we have @pwr, @spd, or @hr
+                if '@' in step_detail and '@pwr' not in step_detail and '@spd' not in step_detail and '@hr' not in step_detail:
+                    # Default to @pwr for cycling
+                    step_detail = step_detail.replace('@', '@pwr ')
+            elif sport_type == "running" or sport_type == "swimming":
+                # For running and swimming, convert @spd to @ and @pwr to @
                 if '@spd' in step_detail:
                     step_detail = step_detail.replace('@spd ', '@')
+                if '@pwr' in step_detail:
+                    step_detail = step_detail.replace('@pwr ', '@')
             
             formatted_steps.append(f"{step_type}: {step_detail}")
     
     return "\n".join(formatted_steps)
-
-
-
 
 
 def create_unified_examples_sheet(workbook):
@@ -1324,6 +1352,8 @@ def update_workouts_sheet(sheet, yaml_data):
     sheet.column_dimensions['F'].width = 60   # Steps
 
 
+
+
 def format_steps_for_excel(steps, sport_type="running"):
     """
     Formatta i passi per il foglio Excel con la corretta indentazione.
@@ -1505,10 +1535,21 @@ def update_config_sheet(sheet, config):
             if key == 'margins':
                 # Aggiorna i margini
                 margins = config.get('margins', {})
+                # Assicurati che i valori siano stringhe per evitare problemi con i decimali
                 if 'faster' in margins and margins['faster'] is not None:
-                    sheet.cell(row=row_index, column=2).value = margins['faster']
+                    value = margins['faster']
+                    if isinstance(value, float) and value.is_integer():
+                        sheet.cell(row=row_index, column=2).value = str(int(value))
+                    else:
+                        sheet.cell(row=row_index, column=2).value = str(value)
+                
                 if 'slower' in margins and margins['slower'] is not None:
-                    sheet.cell(row=row_index, column=3).value = margins['slower']
+                    value = margins['slower']
+                    if isinstance(value, float) and value.is_integer():
+                        sheet.cell(row=row_index, column=3).value = str(int(value))
+                    else:
+                        sheet.cell(row=row_index, column=3).value = str(value)
+                
                 if 'hr_up' in margins and margins['hr_up'] is not None:
                     sheet.cell(row=row_index, column=4).value = margins['hr_up']
                 if 'hr_down' in margins and margins['hr_down'] is not None:
@@ -1776,101 +1817,77 @@ def parse_workout_steps(steps_str, workout_name="", sport_type="running"):
         return steps
     
     # Dividi la stringa in righe e rimuovi spazi iniziali/finali
-    lines = [line.strip() for line in steps_str.splitlines()]
+    lines = [line for line in steps_str.splitlines()]
     
     # Flag per tenere traccia delle ripetizioni
     in_repeat = False
     repeat_count = 0
     repeat_steps = []
-    indent_level = 0
+    current_repeat = None
     
     # Per ogni riga
     i = 0
     while i < len(lines):
-        line = lines[i].strip()
+        line = lines[i]
+        stripped_line = line.strip()
         
         # Salta righe vuote
-        if not line:
+        if not stripped_line:
             i += 1
             continue
         
+        # Determina l'indentazione
+        indent = len(line) - len(line.lstrip())
+        
         # Gestisci le ripetizioni
-        if line.lower().startswith('repeat '):
+        if stripped_line.lower().startswith('repeat '):
             # Estrai il numero di ripetizioni
-            match = re.match(r'repeat\s+(\d+)(?:\s*:|$)', line)
+            match = re.match(r'repeat\s+(\d+)(?:\s*:|$)', stripped_line)
             if match:
                 repeat_count = int(match.group(1))
-                in_repeat = True
-                repeat_steps = []
                 
-                # Trova il livello di indentazione delle righe successive
-                for j in range(i+1, len(lines)):
-                    if lines[j].strip():  # Prima riga non vuota
-                        indent_level = len(lines[j]) - len(lines[j].lstrip())
-                        break
-                
-                i += 1  # Passa alla riga successiva
-                continue
-            else:
-                # Se la riga inizia con "repeat" ma non hai trovato un numero, 
-                # trattala come un normale passo (es. repetition potrebbe iniziare con "repeat")
-                pass
-        
-        # Se siamo in una sezione di ripetizioni
-        if in_repeat:
-            # Controlla se siamo usciti dall'indentazione delle ripetizioni
-            if line and line[0] != ' ' and i > 0 and lines[i-1].strip():
-                # Uscito dall'indentazione, ma la riga precedente non era vuota
-                # Questo significa che è un nuovo passo dopo le ripetizioni
-                in_repeat = False
-                
-                # Aggiungi la ripetizione ai passi
-                if repeat_count > 0 and repeat_steps:
-                    steps.append({'repeat': repeat_count, 'steps': repeat_steps})
-                
-                # Resetta per un nuovo ciclo di ripetizioni
-                repeat_count = 0
-                repeat_steps = []
-                indent_level = 0
-            else:
-                # Se la riga è indentata, è un passo nella ripetizione
-                if line and (line[0] == ' ' or line[0] == '\t'):
-                    # Rimuovi l'indentazione
-                    unindented_line = line.lstrip()
-                    
-                    # Parsing del passo
-                    step = parse_step_line(unindented_line, workout_name, sport_type)
-                    if step:
-                        repeat_steps.append(step)
-                    
-                    i += 1
-                    continue
-                elif not line:  # Riga vuota
-                    i += 1
-                    continue
-                else:
-                    # Finito con le ripetizioni
-                    in_repeat = False
-                    
-                    # Aggiungi la ripetizione ai passi
-                    if repeat_count > 0 and repeat_steps:
-                        steps.append({'repeat': repeat_count, 'steps': repeat_steps})
-                    
-                    # Resetta per un nuovo ciclo di ripetizioni
-                    repeat_count = 0
+                # Nuova ripetizione, salva quella precedente se esiste
+                if in_repeat and current_repeat and repeat_steps:
+                    steps.append({'repeat': current_repeat, 'steps': repeat_steps})
                     repeat_steps = []
-                    indent_level = 0
+                
+                # Inizia una nuova ripetizione
+                in_repeat = True
+                current_repeat = repeat_count
+                i += 1
+                continue
         
-        # Parsing di un passo normale
-        step = parse_step_line(line, workout_name, sport_type)
-        if step:
-            steps.append(step)
+        # Se non siamo in una ripetizione e la riga non è indentata, è un passo normale
+        if not in_repeat and indent == 0:
+            step = parse_step_line(stripped_line, workout_name, sport_type)
+            if step:
+                steps.append(step)
+        
+        # Se siamo in una ripetizione e la riga è indentata, è un passo della ripetizione
+        elif in_repeat and indent > 0:
+            step = parse_step_line(stripped_line, workout_name, sport_type)
+            if step:
+                repeat_steps.append(step)
+        
+        # Se siamo in una ripetizione ma la riga non è indentata, è finita la ripetizione
+        elif in_repeat and indent == 0:
+            # Salva la ripetizione attuale
+            if current_repeat and repeat_steps:
+                steps.append({'repeat': current_repeat, 'steps': repeat_steps})
+                repeat_steps = []
+                in_repeat = False
+                current_repeat = None
+            
+            # Processa questa riga come un passo normale
+            step = parse_step_line(stripped_line, workout_name, sport_type)
+            if step:
+                steps.append(step)
         
         i += 1
     
     # Aggiungi l'ultima ripetizione se usciamo dal ciclo ancora in repeat
-    if in_repeat and repeat_count > 0 and repeat_steps:
-        steps.append({'repeat': repeat_count, 'steps': repeat_steps})
+    if in_repeat and current_repeat and repeat_steps:
+        steps.append({'repeat': current_repeat, 'steps': repeat_steps})
     
     return steps
 
@@ -1907,8 +1924,6 @@ def parse_step_line(line, workout_name="", sport_type="running"):
         if step_type == 'repeat' and step_detail.isdigit():
             return {'repeat': int(step_detail), 'steps': []}
         
-        # Se il tipo è repeat ma il dettaglio non è un numero, trattalo come normale
-        
         # Normalizza i tipi di passi
         if step_type in ['running', 'cycling', 'swimming']:
             # Questo è un tipo di sport, non un passo
@@ -1930,29 +1945,6 @@ def parse_step_line(line, workout_name="", sport_type="running"):
         # Applica le sostituzioni se necessario
         if step_type in step_type_map:
             step_type = step_type_map[step_type]
-        
-        # Gestisci @ per i target
-        target_type = ''
-        
-        # Per ciclismo, se non ci sono target specifici, usa potenza come default
-        if sport_type == 'cycling' and '@' not in step_detail:
-            # Verifica se sembra una zona (Z1-Z5)
-            zone_match = re.search(r'\b(Z[1-5])\b', step_detail)
-            if zone_match:
-                target_type = '@pwr '
-                # Ricomponi il dettaglio inserendo @pwr prima della zona
-                parts = step_detail.split(zone_match.group(0))
-                step_detail = parts[0] + target_type + zone_match.group(0) + parts[1]
-        
-        # Per nuoto, se non ci sono target specifici, usa swim come default
-        elif sport_type == 'swimming' and '@' not in step_detail:
-            # Verifica se sembra una zona (Z1-Z5)
-            zone_match = re.search(r'\b(Z[1-5])\b', step_detail)
-            if zone_match:
-                target_type = '@swim '
-                # Ricomponi il dettaglio inserendo @swim prima della zona
-                parts = step_detail.split(zone_match.group(0))
-                step_detail = parts[0] + target_type + zone_match.group(0) + parts[1]
         
         return {step_type: step_detail}
     else:
