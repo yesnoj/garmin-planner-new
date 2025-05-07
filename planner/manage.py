@@ -89,18 +89,47 @@ def dist_to_time(wo_part):
         # We found an end condition to check
         if 'endCondition' in wo_part and wo_part['endCondition']['conditionTypeKey'] == 'distance':
             target_pace_ms = None
+            sport_type = None
+            
+            # Tentiamo di determinare il tipo di sport dal contesto
+            if 'sportType' in wo_part:
+                sport_type = wo_part['sportType'].get('sportTypeKey', None)
+            
             if wo_part['targetType']['workoutTargetTypeKey'] == 'pace.zone':
-                target_pace_ms = (wo_part['targetValueOne'] + wo_part['targetValueTwo']) / 2
-                # 
-                end_condition_sec = wo_part['endConditionValue'] / target_pace_ms
-                # Round it to the nearest 10 seconds
-                end_condition_sec = int(round(end_condition_sec/10, 0) * 10)
-                # Update end condition
-                wo_part['endConditionValue'] = float(end_condition_sec)
-                wo_part['endCondition']['conditionTypeKey'] = 'time'
-                wo_part['endCondition']['conditionTypeId'] = 2
-                wo_part['endCondition']['displayOrder'] = 2
-                wo_part.pop('preferredEndConditionUnit', None)
+                # Questa è una zona di ritmo per corsa
+                if 'targetValueOne' in wo_part and 'targetValueTwo' in wo_part:
+                    target_pace_ms = (wo_part['targetValueOne'] + wo_part['targetValueTwo']) / 2
+                
+                # Se abbiamo un ritmo target valido, converte da distanza a tempo
+                if target_pace_ms:
+                    end_condition_sec = wo_part['endConditionValue'] / target_pace_ms
+                    # Round it to the nearest 10 seconds
+                    end_condition_sec = int(round(end_condition_sec/10, 0) * 10)
+                    # Update end condition
+                    wo_part['endConditionValue'] = float(end_condition_sec)
+                    wo_part['endCondition']['conditionTypeKey'] = 'time'
+                    wo_part['endCondition']['conditionTypeId'] = 2
+                    wo_part['endCondition']['displayOrder'] = 2
+                    # Rimuovi l'unità di distanza preferita, non più necessaria
+                    wo_part.pop('preferredEndConditionUnit', None)
+            elif wo_part['targetType']['workoutTargetTypeKey'] == 'speed.zone' and sport_type == 'cycling':
+                # Questa è una zona di velocità per ciclismo
+                if 'targetValueOne' in wo_part and 'targetValueTwo' in wo_part:
+                    # targetValueOne/Two sono in m/s, calcoliamo la media
+                    target_speed_ms = (wo_part['targetValueOne'] + wo_part['targetValueTwo']) / 2
+                    
+                    # Se abbiamo una velocità target valida, converte da distanza a tempo
+                    if target_speed_ms > 0:
+                        end_condition_sec = wo_part['endConditionValue'] / target_speed_ms
+                        # Round it to the nearest 10 seconds
+                        end_condition_sec = int(round(end_condition_sec/10, 0) * 10)
+                        # Update end condition
+                        wo_part['endConditionValue'] = float(end_condition_sec)
+                        wo_part['endCondition']['conditionTypeKey'] = 'time'
+                        wo_part['endCondition']['conditionTypeId'] = 2
+                        wo_part['endCondition']['displayOrder'] = 2
+                        wo_part.pop('preferredEndConditionUnit', None)
+        
         # Continue looking at this dict
         for k, v in wo_part.items():
             if isinstance(v, list) or isinstance(v, dict):

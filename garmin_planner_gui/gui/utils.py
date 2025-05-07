@@ -31,15 +31,16 @@ DEFAULT_CONFIG = {
             "marathon": "5:20",
             "race_pace": "5:10",
         },
-        "speeds": {
-            "Z1": "15.0",
-            "Z2": "20.0",
-            "Z3": "25.0",
-            "Z4": "30.0",
-            "Z5": "35.0",
-            "recovery": "12.0",
-            "threshold": "28.0",
-            "ftp": "32.0",
+        "power_values": {
+            "Z1_PW": "125-175",
+            "Z2_PW": "175-215",
+            "Z3_PW": "215-250",
+            "Z4_PW": "250-300",
+            "Z5_PW": "300-375",
+            "recovery_PW": "<125",
+            "threshold_PW": "235-265",
+            "sweet_spot_PW": "220-235",
+            "ftp": "250"  # Valore di riferimento per FTP
         },
         "swim_paces": {
             "Z1": "2:30",

@@ -22,6 +22,7 @@ import logging
 import random
 import string
 
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -1946,6 +1947,15 @@ def parse_step_line(line, workout_name="", sport_type="running"):
         if step_type in step_type_map:
             step_type = step_type_map[step_type]
         
+        # IMPORTANTE: Per conservare l'informazione sulla zona/target,
+        # assicurati di includere tutte le informazioni nel dettaglio del passo
+        
+        # Cerca zone o target nel formato @Z1, @hr Z2_HR, ecc.
+        if '@' in step_detail:
+            # Se ci sono zone, mantieni esattamente il dettaglio originale
+            # che verrà poi elaborato durante la creazione del WorkoutStep
+            pass
+            
         return {step_type: step_detail}
     else:
         # Se non riesci a estrarre il tipo e i dettagli, potrebbe comunque essere un passo valido
@@ -1971,6 +1981,103 @@ def parse_step_line(line, workout_name="", sport_type="running"):
         else:
             # Se non c'è abbastanza informazione, considera come intervallo generico
             return {'interval': line}
+
+def parse_target(target_text, paces=None, heart_rates=None, sport_type="running"):
+    """
+    Parse target zone from text like "@Z3" or "@hr Z2_HR"
+    
+    Args:
+        target_text: Text containing target information
+        paces: Dictionary of pace values
+        heart_rates: Dictionary of heart rate values
+        sport_type: Type of sport
+        
+    Returns:
+        Target object
+    """
+    if not target_text or not target_text.startswith('@'):
+        return Target()
+        
+    # Check if this is a heart rate target
+    is_hr = 'hr' in target_text.lower()
+    
+    # Extract zone name (e.g., "Z3" or "Z2_HR")
+    zone_match = re.search(r'@(?:hr\s+)?([A-Za-z0-9_]+)', target_text)
+    if not zone_match:
+        return Target()
+        
+    zone_name = zone_match.group(1)
+    
+    # Handle heart rate zones
+    if is_hr or '_HR' in zone_name:
+        # Get zone number if it's in format Z1_HR, Z2_HR, etc.
+        zone_number_match = re.match(r'Z(\d+)(?:_HR)?', zone_name)
+        if zone_number_match and heart_rates:
+            zone_number = int(zone_number_match.group(1))
+            # Look up heart rate values from configuration
+            zone_key = f"Z{zone_number}_HR"
+            hr_value = heart_rates.get(zone_key, "")
+            
+            # Parse heart rate ranges (e.g., "140-160")
+            hr_range_match = re.match(r'(\d+)-(\d+)', str(hr_value))
+            if hr_range_match:
+                from_value = float(hr_range_match.group(1))
+                to_value = float(hr_range_match.group(2))
+                return Target("heart.rate.zone", to_value, from_value, zone_number)
+            # Parse single heart rate values
+            elif str(hr_value).isdigit():
+                value = float(hr_value)
+                # Create a range around the single value
+                return Target("heart.rate.zone", value * 1.05, value * 0.95, zone_number)
+        
+        # Default heart rate zone if not found in configuration
+        return Target("heart.rate.zone", 150, 130, 1)
+    
+    # Handle pace zones
+    elif sport_type == "running" and paces and zone_name in paces:
+        pace_value = paces.get(zone_name, "")
+        
+        # Convert MM:SS format to meters per second
+        if ":" in str(pace_value):
+            parts = str(pace_value).split(":")
+            if len(parts) == 2:
+                minutes = int(parts[0])
+                seconds = int(parts[1])
+                total_seconds = minutes * 60 + seconds
+                meters_per_second = 1000 / total_seconds  # Convert min/km to m/s
+                
+                # Get zone number if applicable
+                zone_number = None
+                if re.match(r'Z\d+', zone_name):
+                    zone_number = int(zone_name[1:])
+                
+                # For pace zones, create a range with +/- 5% variation
+                from_value = meters_per_second * 0.95  # Slower pace (lower m/s)
+                to_value = meters_per_second * 1.05    # Faster pace (higher m/s)
+                
+                return Target("pace.zone", to_value, from_value, zone_number)
+    
+    # Handle power zones for cycling
+    elif sport_type == "cycling" and zone_name.startswith('Z'):
+        # Extract zone number
+        zone_number_match = re.match(r'Z(\d+)', zone_name)
+        if zone_number_match:
+            zone_number = int(zone_number_match.group(1))
+            # Define power ranges based on zone number (customize as needed)
+            power_ranges = {
+                1: (100, 150),
+                2: (150, 200),
+                3: (200, 250),
+                4: (250, 300),
+                5: (300, 350)
+            }
+            
+            if zone_number in power_ranges:
+                from_value, to_value = power_ranges[zone_number]
+                return Target("power.zone", to_value, from_value, zone_number)
+    
+    # Default to no target if we couldn't parse anything
+    return Target()
 
 
 def auto_adjust_column_widths(worksheet):

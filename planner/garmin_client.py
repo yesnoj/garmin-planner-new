@@ -9,6 +9,7 @@ class GarminClient():
 
   def __init__(self, oauth_folder='oauth-folder'):
     garth.resume(oauth_folder)
+    self.logged_in = True
 
   def list_workouts(self):
     response = garth.connectapi(
@@ -16,11 +17,60 @@ class GarminClient():
         params={'start': 1, 'limit': 999, 'myWorkoutsOnly': True})
     return response
 
+
   def add_workout(self, workout):
-    response = garth.connectapi(
-      '/workout-service/workout', method="POST",
-      json=workout.garminconnect_json())
-    return response 
+      """
+      Versione semplificata che utilizza valori hardcoded per le zone HR
+      """
+      import logging
+      import json
+      
+      # Converti in JSON
+      workout_json = workout.garminconnect_json()
+      
+      # Forza manualmente specifici step a usare heart.rate.zone con valori appropriati
+      for segment in workout_json.get("workoutSegments", []):
+          for step in segment.get("workoutSteps", []):
+              step_type = step.get("stepType", {}).get("stepTypeKey", "")
+              
+              # Forza HR per step warmup e cooldown
+              if step_type in ["warmup", "cooldown"]:
+                  step["targetType"]["workoutTargetTypeKey"] = "heart.rate.zone"
+                  step["targetType"]["workoutTargetTypeId"] = 4  # ID per heart.rate.zone
+                  
+                  # Valori hardcoded per Z1_HR
+                  hr_min = 110.0
+                  hr_max = 125.0
+                  step["targetValueOne"] = hr_min
+                  step["targetValueTwo"] = hr_max
+                  
+                  logging.info(f"Forzato target a heart.rate.zone per step {step_type} con valori {hr_min}-{hr_max} bpm")
+      
+      # Invia a Garmin Connect
+      response = garth.connectapi(
+        '/workout-service/workout', method="POST",
+        json=workout_json)
+      
+      return response
+
+  def _load_config(self):
+      """Carica la configurazione da un file."""
+      import os
+      import json
+      
+      # Percorso del file di configurazione
+      config_file = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+      
+      try:
+          if os.path.exists(config_file):
+              with open(config_file, 'r', encoding='utf-8') as f:
+                  config = json.load(f)
+                  # Assicurati che workout_config esista
+                  return config.get('workout_config', {})
+          return {}
+      except Exception as e:
+          logging.error(f"Errore nel caricamento della configurazione: {str(e)}")
+          return {}
 
   def delete_workout(self, workout_id):
     logging.info(f'deleting workout {workout_id}')
@@ -141,3 +191,60 @@ class GarminClient():
       password = getpass('Enter password: ')
       garth.login(email, password)
       garth.save(args.oauth_folder)
+      
+def add_workout_from_yaml(self, workout_name, steps, sport_type=None, config=None):
+    """
+    Crea un allenamento dai passi in formato YAML e lo carica su Garmin Connect.
+    
+    Args:
+        workout_name: Nome dell'allenamento
+        steps: Lista di passi in formato YAML
+        sport_type: Tipo di sport (opzionale, sarà estratto dai passi)
+        config: Configurazione con paces, heart_rates, etc.
+        
+    Returns:
+        Risposta dall'API di Garmin Connect
+    """
+    from planner.workout import Workout
+    
+    # Prepara i dati di configurazione
+    paces = {}
+    heart_rates = {}
+    swim_paces = {}
+    
+    if config and 'workout_config' in config:
+        workout_config = config['workout_config']
+        if 'paces' in workout_config:
+            paces = workout_config['paces']
+            print(f"Using paces configuration: {paces}")
+        if 'heart_rates' in workout_config:
+            heart_rates = workout_config['heart_rates']
+            print(f"Using heart_rates configuration: {heart_rates}")
+        if 'swim_paces' in workout_config:
+            swim_paces = workout_config['swim_paces']
+            print(f"Using swim_paces configuration: {swim_paces}")
+    
+    # Stampa per debug
+    print(f"Creating workout: {workout_name}")
+    print(f"Sport type: {sport_type}")
+    print(f"Steps: {steps}")
+    
+    # Crea l'allenamento usando il nuovo metodo 
+    workout = Workout.from_yaml_steps(
+        workout_name, 
+        steps,
+        sport_type=sport_type,
+        paces=paces,
+        heart_rates=heart_rates
+    )
+    
+    # Converti distanza a tempo se necessario (per tapis roulant)
+    workout.dist_to_time()
+    
+    # Stampa l'allenamento in formato JSON per debug
+    import json
+    wo_json = workout.garminconnect_json()
+    print(f"Workout JSON for Garmin Connect: {json.dumps(wo_json, indent=2)}")
+    
+    # Aggiungi l'allenamento a Garmin Connect
+    return self.add_workout(workout)
